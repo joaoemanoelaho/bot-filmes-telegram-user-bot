@@ -87,12 +87,12 @@ def search_movies(query: str, limit: int = 10) -> list[dict]: # <-- MUDANÇA 1
     try:
         # Renomeia 'id' para 'movie_id' para consistência
         response = supabase.table('movies') \
-            .select('id, title, year, genre, poster_url') \
+            .select('movie_id, title, year, genre, poster_url') \
             .ilike('title', f'%{query}%') \
             .limit(limit) \
             .execute()
-        # Renomeia a chave 'id' para 'movie_id'
-        return [{'movie_id': m['id'], **{k: v for k, v in m.items() if k != 'id'}} for m in response.data]
+        # Não precisamos mais renomear a chave
+        return response.data # <--- MUDANÇA AQUI
     except Exception as e:
         print(f"Erro search_movies: {e}")
         return []
