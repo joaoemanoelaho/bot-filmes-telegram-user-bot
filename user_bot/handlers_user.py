@@ -4,7 +4,7 @@
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
     InlineQueryResultArticle, InputTextMessageContent, 
-    InlineQueryResultPhoto, InputMediaPhoto # <-- MUDANÇA: Importar InputMediaPhoto
+    InlineQueryResultPhoto, InputMediaPhoto, CallbackQuery # <-- Adicionado CallbackQuery
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
 import database as db
@@ -29,21 +29,103 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 # =================================================================
+# === FUNÇÕES DE SEGURANÇA DE REDE (Anti-httpx.ReadError) ===
+# =================================================================
+
+async def safe_send_message(context: ContextTypes.DEFAULT_TYPE, chat_id, text, **kwargs):
+    retries = 3
+    delay = 2
+    for i in range(retries):
+        try:
+            return await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Erro de rede (safe_send_message): {e}. Tentativa {i+1}/{retries}")
+            if i < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ FALHA AO ENVIAR MENSAGEM para {chat_id}.")
+                return None
+
+async def safe_send_photo(context: ContextTypes.DEFAULT_TYPE, chat_id, photo, **kwargs):
+    retries = 3
+    delay = 3
+    for i in range(retries):
+        try:
+            return await context.bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Erro de rede (safe_send_photo): {e}. Tentativa {i+1}/{retries}")
+            if i < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ FALHA AO ENVIAR FOTO para {chat_id}.")
+                return None
+
+async def safe_edit_message_caption(message, caption, **kwargs):
+    if not message: return
+    retries = 3
+    delay = 2
+    for i in range(retries):
+        try:
+            return await message.edit_caption(caption=caption, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Erro de rede (safe_edit_caption): {e}. Tentativa {i+1}/{retries}")
+            if i < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ FALHA AO EDITAR CAPTION.")
+                return None
+
+async def safe_edit_message_text(message, text, **kwargs):
+    if not message: return
+    retries = 3
+    delay = 2
+    for i in range(retries):
+        try:
+            return await message.edit_text(text=text, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Erro de rede (safe_edit_text): {e}. Tentativa {i+1}/{retries}")
+            if i < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ FALHA AO EDITAR TEXTO.")
+                return None
+
+async def safe_edit_message_media(message, media, **kwargs):
+    if not message: return
+    retries = 3
+    delay = 3
+    for i in range(retries):
+        try:
+            return await message.edit_media(media=media, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Erro de rede (safe_edit_media): {e}. Tentativa {i+1}/{retries}")
+            if i < retries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ FALHA AO EDITAR MÍDIA.")
+                return None
+
+async def safe_answer_query(query: CallbackQuery, **kwargs):
+    try:
+        await query.answer(**kwargs)
+    except Exception as e:
+        print(f"⚠️ Erro de rede (safe_answer_query): {e} (ignorado)")
+
+# =================================================================
 # === NOVOS HELPERS DE NAVEGAÇÃO (SÉRIES) ===
 # =================================================================
 
 async def show_series_details_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int):
-    """
-    (NOVO) Helper para o deep link /start series_... ou botão 'Voltar'.
-    Verifica o VIP e mostra o card de temporadas.
-    """
     user_id = update.effective_user.id
     
-    # Se for um comando /start, deleta a mensagem
     if update.message:
         await update.message.delete()
         
-    # 1. Verifica o VIP
     if not db.is_user_vip(user_id):
         keyboard = [[InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -51,24 +133,22 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
             "✨ *Você precisa do Passe Premium para assistir séries!* ✨\n\n"
             "Clique no botão abaixo para se tornar VIP!"
         )
-        await context.bot.send_message(
-            chat_id=user_id, text=message_text,
+        await safe_send_message(
+            context, chat_id=user_id, text=message_text,
             reply_markup=reply_markup, parse_mode="Markdown"
         )
         return
         
-    # 2. (VIP) Busca a série e temporadas
     series = db.get_series_by_id(series_id)
     if not series:
-        await context.bot.send_message(chat_id=user_id, text="Erro: Série não encontrada.")
+        await safe_send_message(context, chat_id=user_id, text="Erro: Série não encontrada.")
         return
 
     seasons = db.get_seasons_for_series(series_id)
     if not seasons:
-        await context.bot.send_message(chat_id=user_id, text="Esta série ainda não tem temporadas cadastradas.")
+        await safe_send_message(context, chat_id=user_id, text="Esta série ainda não tem temporadas cadastradas.")
         return
 
-    # 3. Monta o card da série
     caption = (
         f"📺 *{series['title']}*\n\n"
         f"🗓️ *Ano:* {series['year']}\n"
@@ -79,34 +159,31 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
     )
     
     keyboard = []
-    # Cria botões para cada temporada
     for season in seasons:
         keyboard.append([
             InlineKeyboardButton(
                 f"▶️ Temporada {season['season_number']}",
-                callback_data=f"series_season_{season['id']}" # <-- Novo Callback
+                callback_data=f"series_season_{season['id']}"
             )
         ])
-    
-    # Botão de voltar ao menu principal
     keyboard.append([InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     poster_url = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
 
-    # 4. Envia ou Edita
     if update.callback_query:
-        # Se veio de um botão "Voltar", edita a mensagem
         try:
-            await update.callback_query.edit_message_media(
+            await safe_edit_message_media(
+                update.callback_query.message,
                 media=InputMediaPhoto(media=poster_url, caption=caption, parse_mode='Markdown'),
                 reply_markup=reply_markup
             )
         except Exception as e:
-            print(f"Erro ao editar para show_series_details_handler: {e}")
+            print(f"Erro ao editar (show_series_details_handler): {e}")
     else:
-        # Se veio de um deep link /start, envia uma nova foto
-        await context.bot.send_photo(
+        # (Este era o ponto que falhava com httpx.ReadError)
+        await safe_send_photo(
+            context,
             chat_id=user_id,
             photo=poster_url,
             caption=caption,
@@ -115,13 +192,11 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
         )
 
 async def send_season_details(query: Update, context: ContextTypes.DEFAULT_TYPE, season_id: int):
-    """
-    (NOVO) Mostra os episódios de uma temporada.
-    """
+    """(ATUALIZADO) Mostra episódios (Corrigido AttributeError)"""
     try:
         episodes, season = db.get_episodes_for_season(season_id)
         if not episodes:
-            await query.answer("Esta temporada ainda não tem episódios.", show_alert=True)
+            await safe_answer_query(query.callback_query, "Esta temporada ainda não tem episódios.", show_alert=True)
             return
 
         keyboard = []
@@ -133,33 +208,33 @@ async def send_season_details(query: Update, context: ContextTypes.DEFAULT_TYPE,
             keyboard.append([
                 InlineKeyboardButton(
                     f"Ep. {ep['episode_number']}: {ep['title']} {audio_tags}",
-                    callback_data=f"series_episode_{ep['id']}" # <-- Novo Callback
+                    callback_data=f"series_episode_{ep['id']}"
                 )
             ])
         
-        # Botão de Voltar para a lista de temporadas
         keyboard.append([InlineKeyboardButton("🔙 Voltar (Info da Série)", callback_data=f"series_view_{season['series_id']}")])
-        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Apenas edita a mensagem anterior
-        await query.callback_query.edit_message_caption(
+        # --- INÍCIO DA CORREÇÃO (AttributeError) ---
+        # O objeto 'query' é o 'update', que contém 'callback_query'.
+        # O 'callback_query' é o que tem o '.message' para editar.
+        await safe_edit_message_caption(
+            query.callback_query.message, # <-- CORRETO
             caption=f"Selecione um episódio para a **Temporada {season['season_number']}**:",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+        # --- FIM DA CORREÇÃO ---
         
     except Exception as e:
         print(f"❌ Erro em send_season_details: {e}")
 
 async def send_episode_options(query: Update, context: ContextTypes.DEFAULT_TYPE, episode_id: int):
-    """
-    (NOVO) Mostra as opções de áudio (DUB/LEG) para um episódio.
-    """
+    """(ATUALIZADO) Mostra opções de áudio (Corrigido AttributeError)"""
     try:
         episode = db.get_episode_by_id(episode_id)
         if not episode:
-            await query.answer("Episódio não encontrado.", show_alert=True)
+            await safe_answer_query(query.callback_query, "Episódio não encontrado.", show_alert=True)
             return
 
         keyboard = []
@@ -167,13 +242,12 @@ async def send_episode_options(query: Update, context: ContextTypes.DEFAULT_TYPE
             keyboard.append([InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"series_send_{episode['id']}_dub")])
         if episode.get('subtitled_file_id'):
             keyboard.append([InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"series_send_{episode['id']}_sub")])
-        
-        # Botão de Voltar para a lista de episódios
         keyboard.append([InlineKeyboardButton("🔙 Voltar (Episódios)", callback_data=f"series_season_{episode['season_id']}")])
-
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.callback_query.edit_message_caption(
+        # --- CORREÇÃO (AttributeError) ---
+        await safe_edit_message_caption(
+            query.callback_query.message, # <-- CORRETO
             caption="Selecione o áudio desejado abaixo:",
             reply_markup=reply_markup
         )
@@ -186,10 +260,6 @@ async def send_episode_options(query: Update, context: ContextTypes.DEFAULT_TYPE
 # =================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    (ATUALIZADO) Função /start.
-    Com lógica de Deep Linking para FILMES e SÉRIES.
-    """
     is_query = update.callback_query is not None
     
     if is_query:
@@ -201,34 +271,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
     if context.args:
         payload = context.args[0]
-        # --- MUDANÇA 1: Roteador de Deep Link ---
         if payload.startswith("watch_"):
             movie_id = payload.split('_')[1]
             context.args = [movie_id]
-            return await watch_command_handler(update, context) # Chama o handler de filmes
+            return await watch_command_handler(update, context)
         elif payload.startswith("series_"):
             series_id = int(payload.split('_')[1])
-            # Chama o NOVO helper de séries
             return await show_series_details_handler(update, context, series_id)
-        # --- FIM DA MUDANÇA 1 ---
 
     db.get_or_create_user(user_id=user.id, first_name=user.first_name)
     
-    # --- MUDANÇA 2: Texto dos botões ---
     keyboard = [
-        [
-            InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),
-        ],
-        [
-            InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")
-        ],
-        [
-            InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
-            InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top") # Texto atualizado
-        ]
+        [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat="")],
+        [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
+        [InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
+         InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
     ]
-    # --- FIM DA MUDANÇA 2 ---
-    
     main_menu = InlineKeyboardMarkup(keyboard)
     welcome_text = (
         f"Olá {user.mention_html()}! 👋\n\n"
@@ -239,16 +297,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     if is_query:
         try:
-            # (Seu código original usa edit_text, então vamos manter)
-            await message_to_reply.edit_text(welcome_text, reply_markup=main_menu, parse_mode='HTML')
+            await safe_edit_message_text(message_to_reply, welcome_text, reply_markup=main_menu, parse_mode='HTML')
         except Exception as e:
-            print(f"Erro ao editar mensagem de volta ao menu: {e}")
-            await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=main_menu, parse_mode='HTML')
+            print(f"Erro ao editar (start): {e}")
+            await safe_send_message(context, chat_id=user.id, text=welcome_text, reply_markup=main_menu, parse_mode='HTML')
     else:
         await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """(Sem mudança) Inicia o fluxo de pedido."""
     context.user_data['state'] = 'awaiting_request'
     await update.message.reply_text(
         "Qual filme ou série você gostaria de ver no catálogo?\n\n"
@@ -256,24 +312,19 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    (ATUALIZADO) Processa TODOS os cliques em botões inline.
-    """
     query = update.callback_query
-    # (Seu código moveu o answer() para dentro dos blocos, vamos manter)
     callback_data = query.data
     user_id = query.from_user.id
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
 
-    # --- LÓGICA PARA ENVIAR O FILME (Sem mudança) ---
     if callback_data.startswith("play_"):
-        await query.answer()
+        await safe_answer_query(query)
         _, movie_id_str, audio_choice = callback_data.split('_')
         movie_id = int(movie_id_str)
-        await query.edit_message_caption(caption="⏳ Carregando seu filme, por favor aguarde...")
+        await safe_edit_message_caption(query.message, caption="⏳ Carregando seu filme...")
         movie = db.get_movie_by_id(movie_id)
         if not movie:
-            await query.edit_message_caption(caption="Erro: Filme não encontrado.")
+            await safe_edit_message_caption(query.message, caption="Erro: Filme não encontrado.")
             return
         file_id_to_send = movie.get('dubbed_file_id') if audio_choice == "dub" else movie.get('subtitled_file_id')
         if file_id_to_send:
@@ -297,42 +348,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             db.log_movie_view(movie_id=movie_id, user_id=user_id)
         else:
-            await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
+            await safe_edit_message_caption(query.message, caption="😔 Desculpe, esta versão do filme não está disponível.")
 
     elif callback_data.startswith("related_"):
-        await query.answer()
+        await safe_answer_query(query)
         movie_id = int(callback_data.split('_')[1])
         movie = db.get_movie_by_id(movie_id)
         if not movie:
-            await context.bot.send_message(chat_id=user_id, text="Não consegui encontrar o filme original.")
+            await safe_send_message(context, chat_id=user_id, text="Não consegui encontrar o filme original.")
             return
-        status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando filmes relacionados a '{movie['title']}'...")
+        status_msg = await safe_send_message(context, chat_id=user_id, text=f"⏳ Buscando filmes relacionados a '{movie['title']}'...")
         recommendations_from_api = tastedive_api.get_recommendations(movie['title'])
         if recommendations_from_api:
             existing_recommendations = db.filter_existing_titles(recommendations_from_api)
         else:
             existing_recommendations = []
         if not existing_recommendations:
-            await status_msg.edit_text("Não encontrei nenhuma recomendação que já esteja em nosso catálogo.")
+            await safe_edit_message_text(status_msg, "Não encontrei nenhuma recomendação que já esteja em nosso catálogo.")
             return
         keyboard = []
         for title in existing_recommendations:
             keyboard.append([InlineKeyboardButton(f"🔎 {title}", switch_inline_query_current_chat=title)])
         message_text = f"Se você gostou de '{movie['title']}', talvez também goste destes:\n\nClique em um título para buscar:"
-        await status_msg.edit_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_edit_message_text(status_msg, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # --- LÓGICA PARA O BOTÃO DE PEDIDO (Sem mudança) ---
     elif callback_data == "main_request":
-        await query.answer()
+        await safe_answer_query(query)
         context.user_data['state'] = 'awaiting_request'
-        await query.edit_message_text(
+        await safe_edit_message_text(
+            query.message,
             text="Qual filme ou série você gostaria de ver no catálogo?\n\n"
                  "Por favor, envie o nome completo. Para cancelar, digite /cancelar."
         )
     
-    # --- LÓGICA PARA O BOTÃO TOP FILMES (Sem mudança) ---
     elif callback_data == "main_top":
-        await query.answer()
+        await safe_answer_query(query)
         keyboard = [
             [InlineKeyboardButton("🏆 Top Semana", callback_data="top_7")],
             [InlineKeyboardButton("🗓️ Top Mês", callback_data="top_30")],
@@ -340,38 +390,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
+        await safe_edit_message_text(query.message, "Selecione o período do ranking:", reply_markup=reply_markup)
 
     elif callback_data.startswith("top_"):
-        await query.answer()
+        await safe_answer_query(query)
         period_days = int(callback_data.split('_')[1])
         period_text = "Geral (Todos os Tempos)"
         if period_days == 7: period_text = "da Semana"
         if period_days == 30: period_text = "do Mês"
-        await query.edit_message_text(f"🏆 Buscando o Top 10 {period_text}, aguarde...")
+        await safe_edit_message_text(query.message, f"🏆 Buscando o Top 10 {period_text}, aguarde...")
         trending_movies = db.get_trending(period_days=period_days)
         if not trending_movies:
-            await query.edit_message_text("Ainda não há dados suficientes para gerar um ranking.")
+            await safe_edit_message_text(query.message, "Ainda não há dados suficientes para gerar um ranking.")
             return
         keyboard = []
         for movie in trending_movies:
-            button = [InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"show_card_{movie['movie_id']}")]
+            button = [InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"show_card_{movie['id']}")]
             keyboard.append(button)
         keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="main_top")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = f"🏆 **Top 10 {period_text}** 🏆\n\nClique em um filme abaixo para ver mais detalhes:"
-        await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
+        await safe_edit_message_text(query.message, message_text, parse_mode="Markdown", reply_markup=reply_markup)
 
     elif callback_data.startswith("show_card_"):
-        await query.answer()
+        await safe_answer_query(query)
         movie_id = int(callback_data.split('_')[2])
         movie = db.get_movie_by_id(movie_id)
         if not movie:
-            await query.edit_message_text("Desculpe, este filme não foi encontrado.")
+            await safe_edit_message_text(query.message, "Desculpe, este filme não foi encontrado.")
             return
         await query.delete_message()
         bot_username = context.bot.username
-        watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+        watch_url = f"https://t.me/{bot_username}?start=watch_{movie['id']}"
         keyboard = [[
             InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])
@@ -383,7 +433,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"🎬 *{movie['title']}* ({movie['year']})\n"
             f"🎭 *Gênero:* {movie['genre']}"
         )
-        await context.bot.send_message(
+        await safe_send_message(
+            context,
             chat_id=user_id,
             text=card_text_content,
             parse_mode="Markdown",
@@ -391,27 +442,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             disable_web_page_preview=False
         )
 
-    # --- LÓGICA PARA O BOTÃO DE VOLTAR AO MENU (Sem mudança) ---
     elif callback_data == "back_to_main":
-        await query.answer()
+        await safe_answer_query(query)
         await start(update, context)
         
-    # --- LÓGICA DE PAGAMENTO VIP (Sem mudança) ---
     elif callback_data == "main_vip":
-        await query.answer()
+        await safe_answer_query(query)
         if db.is_user_vip(user_id):
-            await query.edit_message_text("✨ Você já é um membro VIP! Aproveite o catálogo.")
+            await safe_edit_message_text(query.message, "✨ Você já é um membro VIP! Aproveite o catálogo.")
             return
         user_details = db.get_user_details(user_id)
         active_payment_id = user_details.get('active_payment_id') if user_details else None
         if active_payment_id:
-            await query.edit_message_text("⏳ Verificando seu pagamento anterior, aguarde...")
+            await safe_edit_message_text(query.message, "⏳ Verificando seu pagamento anterior...")
             status = payments.check_payment_status(active_payment_id)
             if status == 'created':
-                await query.edit_message_text("Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
+                await safe_edit_message_text(query.message, "Você já possui uma cobrança PIX pendente.")
                 return 
-        await query.edit_message_text("⏳ Gerando sua cobrança PIX, aguarde...")
-        vip_price = 2.00 # (Você pode mover isso para o config.py)
+        await safe_edit_message_text(query.message, "⏳ Gerando sua cobrança PIX...")
+        vip_price = 2.00
         payment_data = payments.create_pix_payment(user_id=user_id, amount=vip_price)
         if payment_data and payment_data.get("qr_code_base64"):
             payment_id = payment_data['payment_id']
@@ -434,76 +483,71 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = [[InlineKeyboardButton("✅ Já Paguei", callback_data=f"check_payment_{payment_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.delete_message()
-            await context.bot.send_photo(
-                chat_id=user_id, photo=qr_image_file, caption=caption,
+            await safe_send_photo(
+                context, chat_id=user_id, photo=qr_image_file, caption=caption,
                 parse_mode="Markdown", reply_markup=reply_markup
             )
         else:
-            await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
+            await safe_edit_message_text(query.message, "😕 Desculpe, não foi possível gerar a cobrança PIX.")
 
     elif callback_data.startswith("check_payment_"):
         payment_id = callback_data.split('_')[2]
         now = time.time()
         last_check = context.user_data.get('last_payment_check', 0)
         if now - last_check < 60:
-            await query.answer(
-                text=f"✋ Por favor, aguarde {int(60 - (now - last_check))} segundos antes de verificar novamente.",
+            await safe_answer_query(
+                query,
+                text=f"✋ Por favor, aguarde {int(60 - (now - last_check))} segundos.",
                 show_alert=True
             )
             return
         context.user_data['last_payment_check'] = now
         status = payments.check_payment_status(payment_id)
         if status == 'paid':
-            await query.answer()
+            await safe_answer_query(query)
             db.set_user_as_vip(user_id, duration_days=30)
             db.clear_user_active_payment_id(user_id)
             await query.message.delete()
-            await context.bot.send_message(
+            await safe_send_message(
+                context,
                 chat_id=user_id,
                 text="🎉 **Pagamento confirmado!** 🎉\n\n"
                      "Você agora é um membro VIP! Aproveite todo o nosso catálogo.",
                 parse_mode="Markdown"
             )
         else:
-            await query.answer(
+            await safe_answer_query(
+                query,
                 text=" Pagamento ainda não confirmado.\n\nA confirmação pode levar alguns instantes.",
                 show_alert=True
             )
             
-    #
-    # --- INÍCIO DA MUDANÇA 3: LÓGICA DE BOTÕES DE SÉRIES ---
-    #
+    # --- LÓGICA DE BOTÕES DE SÉRIES (Agora usando SAFE) ---
     elif callback_data.startswith("series_view_"):
-        await query.answer()
+        await safe_answer_query(query)
         series_id = int(callback_data.split('_')[2])
-        # Requer que o helper possa lidar com um 'update.callback_query'
         await show_series_details_handler(update, context, series_id)
         
     elif callback_data.startswith("series_season_"):
-        await query.answer()
+        await safe_answer_query(query)
         season_id = int(callback_data.split('_')[2])
-        await send_season_details(query, context, season_id)
+        await send_season_details(update, context, season_id)
         
     elif callback_data.startswith("series_episode_"):
-        await query.answer()
+        await safe_answer_query(query)
         episode_id = int(callback_data.split('_')[2])
-        await send_episode_options(query, context, episode_id)
+        await send_episode_options(update, context, episode_id)
         
     elif callback_data.startswith("series_send_"):
-        await query.answer()
+        await safe_answer_query(query)
         parts = callback_data.split('_')
         episode_id = int(parts[2])
         audio_type = parts[3]
-        
-        # Deleta a mensagem de botões
         await query.delete_message()
-        
-        # Pega o episódio
         episode = db.get_episode_by_id(episode_id)
         if not episode:
-            await context.bot.send_message(chat_id=user_id, text="Erro: Episódio não encontrado.")
+            await safe_send_message(context, chat_id=user_id, text="Erro: Episódio não encontrado.")
             return
-
         file_id_to_send = None
         if audio_type == 'dub' and episode.get('dubbed_file_id'):
             file_id_to_send = episode['dubbed_file_id']
@@ -518,14 +562,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 protect_content=True
             )
         else:
-            await context.bot.send_message(chat_id=user_id, text="😔 Desculpe, esta versão do áudio não está disponível.")
-    # --- FIM DA MUDANÇA 3 ---
+            await safe_send_message(context, chat_id=user_id, text="😔 Desculpe, esta versão do áudio não está disponível.")
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (ATUALIZADO) Lida com as buscas em modo inline para FILMES e SÉRIES.
-    Usa o "Hack" de misturar Article + Photo para forçar a lista vertical.
+    (ATUALIZADO) Lida com as buscas inline para FILMES e SÉRIES.
+    USA O HACK DA LISTA VERTICAL.
     """
     query_text = update.inline_query.query
     results = []
@@ -544,28 +587,21 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
-    # V--- INÍCIO DA CORREÇÃO (A "MÁGICA") ---V
-    # 1. Adiciona um "Artigo" de Ajuda Fixo no TOPO da lista.
-    #    Isso força o Telegram a usar a lista vertical.
+    # --- INÍCIO DO HACK (Baseado na sua sugestão) ---
     results.append(
         InlineQueryResultArticle(
             id="static_help",
-            title="Ajuda",
-            description="Como usar o bot de busca",
-            # Pode trocar esse ícone se quiser
+            title="Resultados da Busca:",
+            description="Clique em um item para ver os detalhes.",
             thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
             input_message_content=InputTextMessageContent(
-                "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
-                "Para ver o menu principal, envie o comando /start."
+                f"Você buscou por: \"{query_text}\""
             )
         )
     )
-    # ^--- FIM DA MÁGICA ---^
-
+    # --- FIM DO HACK ---
     
-    # --- Busca Híbrida (Seu código, agora modificado) ---
-    
-    # 2. Busca Filmes e Séries no banco de dados
+    # --- Busca Híbrida ---
     movies_from_db = db.search_movies(query_text, limit=5)
     series_from_db = db.search_series_by_title(query_text, limit=5)
     
@@ -574,34 +610,30 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # 3. Processa os resultados de FILMES (Convertido para Photo)
     for movie in movies_from_db:
         if movie.get('poster_url'):
-            watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+            watch_url = f"https://t.me/{bot_username}?start=watch_{movie['id']}" # 'id' (corrigido no db.py)
             keyboard = [[
                 InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             ],
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Legenda LIMPA (sem link invisível)
             photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
             )
             
-            # Cria URL de thumbnail pequena
             poster_url_grande = movie.get('poster_url')
+            # Cria URL de thumbnail pequena (w92)
             poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
             
             results.append(
-                # USA 'InlineQueryResultPhoto'
                 InlineQueryResultPhoto(
-                    id=f"movie_{movie['movie_id']}",
-                    title=f"FILME: {movie['title']}", # Para a lista vertical
-                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}", # Para a lista
-                    
-                    photo_url=poster_url_grande,     # Foto principal (saída)
-                    thumbnail_url=poster_url_pequeno, # Miniatura (lista)
-                    
-                    caption=photo_caption,           # Legenda (saída)
+                    id=f"movie_{movie['id']}",
+                    title=f"FILME: {movie['title']}",
+                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
+                    photo_url=poster_url_grande,
+                    thumbnail_url=poster_url_pequeno, # Miniatura para a lista
+                    caption=photo_caption,
                     parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
@@ -610,9 +642,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # 4. Processa os resultados de SÉRIES (Convertido para Photo)
     for series in series_from_db:
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-        # Cria URL de thumbnail pequena
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
-        
         watch_url = f"https://t.me/{bot_username}?start=series_{series['series_id']}"
         
         keyboard = [[
@@ -621,32 +651,28 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Legenda LIMPA (sem link invisível)
         photo_caption = (
             f"📺 *{series['title']}* ({series['year']})\n"
             f"🎭 *Gênero:* {series.get('genre', 'Série')}"
         )
         
         results.append(
-            # USA 'InlineQueryResultPhoto'
             InlineQueryResultPhoto(
                 id=f"series_{series['series_id']}",
-                title=f"SÉRIE: {series['title']}", # Para a lista vertical
-                description=f"{series['year']} - {series.get('genre', 'Série')}", # Para a lista
-                
-                photo_url=poster_url_grande,     # Foto principal (saída)
-                thumbnail_url=poster_url_pequeno, # Miniatura (lista)
-                
-                caption=photo_caption,           # Legenda (saída)
+                title=f"SÉRIE: {series['title']}",
+                description=f"{series['year']} - {series.get('genre', 'Série')}",
+                photo_url=poster_url_grande,
+                thumbnail_url=poster_url_pequeno,
+                caption=photo_caption,
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         )
 
     await update.inline_query.answer(results, cache_time=30)
-    
+
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """(Sem mudança) Lida com o comando /watch OU é chamada pela função start."""
+    """(ATUALIZADO) Lida com o /watch (Agora usa SAFE)"""
     if update.message:
         await update.message.delete()
     if not context.args:
@@ -659,11 +685,10 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = (
             "✨ *Você precisa do Passe Premium para assistir!* ✨\n\n"
-            "✅ Acesse TODOS os filmes e séries disponíveis.\n"
-            "✅ Ajude a manter o bot online e sempre melhorando.\n\n"
             "Clique no botão abaixo para se tornar VIP!"
         )
-        await context.bot.send_message(
+        await safe_send_message(
+            context,
             chat_id=update.effective_chat.id,
             text=message_text,
             reply_markup=reply_markup,
@@ -671,7 +696,6 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # (Usuário é VIP, continua)
     movie = db.get_movie_by_id(movie_id)
     if movie and movie.get('poster_url'):
         caption = (
@@ -687,7 +711,8 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"play_{movie_id}_sub")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await context.bot.send_photo(
+        await safe_send_photo(
+            context,
             chat_id=update.effective_chat.id,
             photo=movie['poster_url'],
             caption=caption,
@@ -695,10 +720,9 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=reply_markup
         )
     else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
+        await safe_send_message(context, chat_id=update.effective_chat.id, text="Filme não encontrado.")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """(Sem mudança) Lida com mensagens de texto para capturar respostas (pedidos)."""
     user_state = context.user_data.get('state')
     if user_state == 'awaiting_request':
         del context.user_data['state']
@@ -706,14 +730,12 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         user_id = update.effective_user.id
         if db.add_request(user_id=user_id, title=requested_title):
             await update.message.reply_text(
-                f"✅ Obrigado! Sua sugestão \"{requested_title}\" foi registrada e será analisada.\n\n"
-                "Se aprovada, estará disponível em nosso catálogo em até 24 horas!"
+                f"✅ Obrigado! Sua sugestão \"{requested_title}\" foi registrada."
             )
         else:
-            await update.message.reply_text("😕 Desculpe, ocorreu um erro ao salvar seu pedido. Tente novamente mais tarde.")
+            await update.message.reply_text("😕 Desculpe, ocorreu um erro ao salvar seu pedido.")
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """(Sem mudança) Cancela a conversa atual."""
     if 'state' in context.user_data:
         del context.user_data['state']
         await update.message.reply_text("Operação cancelada.")
@@ -721,21 +743,20 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Não há nenhuma operação para cancelar.")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """(Sem mudança) Envia uma mensagem de ajuda."""
     help_text = (
         "Olá! Eu sou o Cine Pipoca, seu assistente de filmes. Veja como me usar:\n\n"
         "🔎 **Para Buscar:**\n"
-        "Vá em qualquer chat, digite o `@username` do bot e comece a escrever o nome do filme ou série. Uma lista de resultados aparecerá!\n\n"
+        "Vá em qualquer chat, digite o `@username` do bot e comece a escrever o nome do filme ou série.\n\n"
         "💡 **Pedir um Filme/Série:**\n"
-        "Use o botão 'Pedir Filme/Série' no menu principal para sugerir um título que você não encontrou.\n\n"
+        "Use o botão 'Pedir Filme/Série' no menu principal.\n\n"
         "🏆 **Top Mídia:**\n"
-        "Quer saber o que está em alta? Clique no botão 'Top Mídia' no menu e escolha o período.\n\n"
+        "Clique no botão 'Top Mídia' no menu.\n\n"
         "🚀 **Acesso VIP:**\n"
-        "O acesso VIP te dá direito a assistir todo o catálogo. Você pode adquirir o seu através do botão no menu principal."
+        "Adquira o acesso VIP através do botão no menu principal."
     )
     help_text = help_text.replace("@username", f"@{context.bot.username}")
     await update.message.reply_text(help_text, parse_mode="Markdown")
-
+    
 # --- Definição dos Handlers (Sem mudança) ---
 start_handler = CommandHandler("start", start)
 button_click_handler = CallbackQueryHandler(button_handler)
