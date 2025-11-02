@@ -1,10 +1,11 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 2.0 - VIP BOT + SÉRIES)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 2.1 - FLUXO INLINE DE SÉRIES)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
     InlineQueryResultArticle, InputTextMessageContent, 
-    InlineQueryResultPhoto, InputMediaPhoto # <-- MUDANÇA: Importar InputMediaPhoto
+    InlineQueryResultPhoto, InputMediaPhoto,
+    InlineQueryResultCachedVideo  # <--- MUDANÇA 1: Importado para episódios
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
 import database as db
@@ -34,14 +35,17 @@ sys.path.insert(0, parent_dir)
 
 async def show_series_details_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int):
     """
-    (NOVO) Helper para o deep link /start series_... ou botão 'Voltar'.
-    Verifica o VIP e mostra o card de temporadas.
+    (ATUALIZADO) Helper para o deep link /start series_... ou botão 'Voltar'.
+    Verifica o VIP e mostra o card com botões INLINE QUERY para as temporadas.
     """
     user_id = update.effective_user.id
     
     # Se for um comando /start, deleta a mensagem
     if update.message:
-        await update.message.delete()
+        try:
+            await update.message.delete()
+        except Exception as e:
+            print(f"Não foi possível deletar a msg /start: {e}") # Evita o crash de ReadError
         
     # 1. Verifica o VIP
     if not db.is_user_vip(user_id):
@@ -79,14 +83,19 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
     )
     
     keyboard = []
+    # <--- MUDANÇA 2: Botões agora usam 'switch_inline_query_current_chat' ---
     # Cria botões para cada temporada
     for season in seasons:
+        # Este será o texto da busca: @SeuBot ep:123 (onde 123 é o ID da temporada)
+        inline_episode_query = f"ep:{season['id']}"
+        
         keyboard.append([
             InlineKeyboardButton(
                 f"▶️ Temporada {season['season_number']}",
-                callback_data=f"series_season_{season['id']}" # <-- Novo Callback
+                switch_inline_query_current_chat=inline_episode_query
             )
         ])
+    # <--- FIM DA MUDANÇA 2 ---
     
     # Botão de voltar ao menu principal
     keyboard.append([InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")])
@@ -114,72 +123,9 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
             reply_markup=reply_markup
         )
 
-async def send_season_details(query: Update, context: ContextTypes.DEFAULT_TYPE, season_id: int):
-    """
-    (NOVO) Mostra os episódios de uma temporada.
-    """
-    try:
-        episodes, season = db.get_episodes_for_season(season_id)
-        if not episodes:
-            await query.answer("Esta temporada ainda não tem episódios.", show_alert=True)
-            return
-
-        keyboard = []
-        for ep in episodes:
-            audio_tags = ""
-            if ep.get('dubbed_file_id'): audio_tags += "[DUB] "
-            if ep.get('subtitled_file_id'): audio_tags += "[LEG]"
-            
-            keyboard.append([
-                InlineKeyboardButton(
-                    f"Ep. {ep['episode_number']}: {ep['title']} {audio_tags}",
-                    callback_data=f"series_episode_{ep['id']}" # <-- Novo Callback
-                )
-            ])
-        
-        # Botão de Voltar para a lista de temporadas
-        keyboard.append([InlineKeyboardButton("🔙 Voltar (Info da Série)", callback_data=f"series_view_{season['series_id']}")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Apenas edita a mensagem anterior
-        await query.callback_query.edit_message_caption(
-            caption=f"Selecione um episódio para a **Temporada {season['season_number']}**:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        print(f"❌ Erro em send_season_details: {e}")
-
-async def send_episode_options(query: Update, context: ContextTypes.DEFAULT_TYPE, episode_id: int):
-    """
-    (NOVO) Mostra as opções de áudio (DUB/LEG) para um episódio.
-    """
-    try:
-        episode = db.get_episode_by_id(episode_id)
-        if not episode:
-            await query.answer("Episódio não encontrado.", show_alert=True)
-            return
-
-        keyboard = []
-        if episode.get('dubbed_file_id'):
-            keyboard.append([InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"series_send_{episode['id']}_dub")])
-        if episode.get('subtitled_file_id'):
-            keyboard.append([InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"series_send_{episode['id']}_sub")])
-        
-        # Botão de Voltar para a lista de episódios
-        keyboard.append([InlineKeyboardButton("🔙 Voltar (Episódios)", callback_data=f"series_season_{episode['season_id']}")])
-
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.callback_query.edit_message_caption(
-            caption="Selecione o áudio desejado abaixo:",
-            reply_markup=reply_markup
-        )
-
-    except Exception as e:
-        print(f"❌ Erro em send_episode_options: {e}")
+# <--- MUDANÇA 3: As funções 'send_season_details' e 'send_episode_options' foram REMOVIDAS
+# Elas não são mais necessárias, pois o fluxo agora é feito pelo 'inline_query_handler'.
+# ---
 
 # =================================================================
 # === HANDLERS EXISTENTES (ATUALIZADOS) ===
@@ -201,7 +147,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
     if context.args:
         payload = context.args[0]
-        # --- MUDANÇA 1: Roteador de Deep Link ---
+        # --- Roteador de Deep Link ---
         if payload.startswith("watch_"):
             movie_id = payload.split('_')[1]
             context.args = [movie_id]
@@ -210,11 +156,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             series_id = int(payload.split('_')[1])
             # Chama o NOVO helper de séries
             return await show_series_details_handler(update, context, series_id)
-        # --- FIM DA MUDANÇA 1 ---
 
     db.get_or_create_user(user_id=user.id, first_name=user.first_name)
     
-    # --- MUDANÇA 2: Texto dos botões ---
     keyboard = [
         [
             InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),
@@ -224,10 +168,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ],
         [
             InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
-            InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top") # Texto atualizado
+            InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")
         ]
     ]
-    # --- FIM DA MUDANÇA 2 ---
     
     main_menu = InlineKeyboardMarkup(keyboard)
     welcome_text = (
@@ -239,11 +182,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     if is_query:
         try:
-            # (Seu código original usa edit_text, então vamos manter)
-            await message_to_reply.edit_text(welcome_text, reply_markup=main_menu, parse_mode='HTML')
+            # Tenta editar a foto (se o menu anterior era uma foto, como o de séries)
+            if message_to_reply.photo:
+                 await message_to_reply.edit_caption(
+                    caption=welcome_text, 
+                    reply_markup=main_menu, 
+                    parse_mode='HTML'
+                )
+            else:
+                await message_to_reply.edit_text(
+                    welcome_text, 
+                    reply_markup=main_menu, 
+                    parse_mode='HTML'
+                )
         except Exception as e:
-            print(f"Erro ao editar mensagem de volta ao menu: {e}")
-            await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=main_menu, parse_mode='HTML')
+            # Se falhar (ex: editando texto para foto), envia nova msg
+            print(f"Erro ao editar de volta ao menu: {e}. Enviando nova mensagem.")
+            await context.bot.send_message(
+                chat_id=user.id, 
+                text=welcome_text, 
+                reply_markup=main_menu, 
+                parse_mode='HTML'
+            )
+            if message_to_reply:
+                await message_to_reply.delete() # Deleta a msg anterior
     else:
         await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
 
@@ -260,7 +222,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     (ATUALIZADO) Processa TODOS os cliques em botões inline.
     """
     query = update.callback_query
-    # (Seu código moveu o answer() para dentro dos blocos, vamos manter)
     callback_data = query.data
     user_id = query.from_user.id
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
@@ -471,64 +432,90 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             
     #
-    # --- INÍCIO DA MUDANÇA 3: LÓGICA DE BOTÕES DE SÉRIES ---
+    # <--- MUDANÇA 4: A antiga "MUDANÇA 3" (lógica de botões de série) foi REMOVIDA
+    # Ela não é mais necessária, pois o 'inline_query_handler' cuida disso.
     #
-    elif callback_data.startswith("series_view_"):
-        await query.answer()
-        series_id = int(callback_data.split('_')[2])
-        # Requer que o helper possa lidar com um 'update.callback_query'
-        await show_series_details_handler(update, context, series_id)
-        
-    elif callback_data.startswith("series_season_"):
-        await query.answer()
-        season_id = int(callback_data.split('_')[2])
-        await send_season_details(query, context, season_id)
-        
-    elif callback_data.startswith("series_episode_"):
-        await query.answer()
-        episode_id = int(callback_data.split('_')[2])
-        await send_episode_options(query, context, episode_id)
-        
-    elif callback_data.startswith("series_send_"):
-        await query.answer()
-        parts = callback_data.split('_')
-        episode_id = int(parts[2])
-        audio_type = parts[3]
-        
-        # Deleta a mensagem de botões
-        await query.delete_message()
-        
-        # Pega o episódio
-        episode = db.get_episode_by_id(episode_id)
-        if not episode:
-            await context.bot.send_message(chat_id=user_id, text="Erro: Episódio não encontrado.")
-            return
-
-        file_id_to_send = None
-        if audio_type == 'dub' and episode.get('dubbed_file_id'):
-            file_id_to_send = episode['dubbed_file_id']
-        elif audio_type == 'sub' and episode.get('subtitled_file_id'):
-            file_id_to_send = episode['subtitled_file_id']
-        
-        if file_id_to_send:
-            await context.bot.send_video(
-                chat_id=query.message.chat.id,
-                video=file_id_to_send,
-                caption=f"▶️ Episódio {audio_type.upper()}",
-                protect_content=True
-            )
-        else:
-            await context.bot.send_message(chat_id=user_id, text="😔 Desculpe, esta versão do áudio não está disponível.")
-    # --- FIM DA MUDANÇA 3 ---
+    
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (ATUALIZADO) Lida com as buscas em modo inline para FILMES e SÉRIES.
-    Usa o "Hack" de misturar Article + Photo para forçar a lista vertical.
+    (ATUALIZADO) Lida com as buscas em modo inline para FILMES, SÉRIES e EPISÓDIOS.
     """
     query_text = update.inline_query.query
     results = []
+    
+    #
+    # <--- MUDANÇA 5: NOVA LÓGICA PARA BUSCAR EPISÓDIOS ---
+    #
+    if query_text.startswith("ep:"):
+        try:
+            season_id = int(query_text.split(':')[1])
+            
+            # Sua função de DB que retorna uma tupla (lista_de_episodios, dados_da_temporada)
+            episodes, season = db.get_episodes_for_season(season_id)
+            
+            if not episodes:
+                results.append(InlineQueryResultArticle(
+                    id="no_eps_found",
+                    title="Nenhum episódio encontrado",
+                    description="Esta temporada parece não ter episódios cadastrados.",
+                    input_message_content=InputTextMessageContent("Nenhum episódio encontrado.")
+                ))
+                await update.inline_query.answer(results, cache_time=10)
+                return
+
+            # Pega o título da série (precisa que a 'season' tenha o 'series_title')
+            # Se sua função `get_episodes_for_season` não retorna o título da série
+            # junto com os dados da 'season', você pode precisar de outra consulta ao DB aqui.
+            # Vou assumir que 'season' tem um campo 'series_title' para o 'description'
+            
+            # (Se 'season' não tiver o título da série, descomente a linha abaixo)
+            # series = db.get_series_by_id(season['series_id'])
+            # series_title = series['title']
+
+            # (Se 'season' JÁ TIVER o título da série, use a linha abaixo)
+            series_title = season.get('series_title', 'Série') # Ajuste se o nome do campo for outro
+
+            for ep in episodes:
+                ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
+                
+                # Adiciona resultado para Dublado
+                if ep.get('dubbed_file_id'):
+                    results.append(
+                        InlineQueryResultCachedVideo(
+                            id=f"ep_dub_{ep['id']}",
+                            video_file_id=ep['dubbed_file_id'],
+                            title=f"Ep. {ep['episode_number']} (Dublado) 🇧🇷",
+                            description=f"{series_title} | {ep_title}",
+                            caption=f"📺 {series_title}\nS{season['season_number']:02d}E{ep['episode_number']:02d} (Dublado)"
+                        )
+                    )
+                
+                # Adiciona resultado para Legendado
+                if ep.get('subtitled_file_id'):
+                    results.append(
+                        InlineQueryResultCachedVideo(
+                            id=f"ep_sub_{ep['id']}",
+                            video_file_id=ep['subtitled_file_id'],
+                            title=f"Ep. {ep['episode_number']} (Legendado) 🇺🇸",
+                            description=f"{series_title} | {ep_title}",
+                            caption=f"📺 {series_title}\nS{season['season_number']:02d}E{ep['episode_number']:02d} (Legendado)"
+                        )
+                    )
+        
+        except Exception as e:
+            print(f"❌ Erro na busca inline de episódios: {e}")
+            results.append(InlineQueryResultArticle(
+                id="error_eps",
+                title="Erro ao buscar episódios",
+                input_message_content=InputTextMessageContent("Ocorreu um erro ao processar sua solicitação.")
+            ))
+        
+        await update.inline_query.answer(results, cache_time=10, is_personal=True)
+        return # <-- IMPORTANTE: Termina a função aqui
+    # --- FIM DA MUDANÇA 5 ---
+
 
     # Se a busca estiver vazia, mostra o balão de ajuda normal
     if not query_text:
@@ -552,10 +539,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             id="static_help",
             title="Ajuda",
             description="Como usar o bot de busca",
-            # Pode trocar esse ícone se quiser
             thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
             input_message_content=InputTextMessageContent(
-                "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
+                f"Para buscar, digite @{context.bot.username} e o nome do filme.\n\n"
                 "Para ver o menu principal, envie o comando /start."
             )
         )
@@ -563,7 +549,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # ^--- FIM DA MÁGICA ---^
 
     
-    # --- Busca Híbrida (Seu código, agora modificado) ---
+    # --- Busca Híbrida (Filmes e Séries) ---
     
     # 2. Busca Filmes e Séries no banco de dados
     movies_from_db = db.search_movies(query_text, limit=5)
@@ -581,27 +567,22 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Legenda LIMPA (sem link invisível)
             photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
             )
             
-            # Cria URL de thumbnail pequena
             poster_url_grande = movie.get('poster_url')
             poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
             
             results.append(
-                # USA 'InlineQueryResultPhoto'
                 InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
-                    title=f"FILME: {movie['title']}", # Para a lista vertical
-                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}", # Para a lista
-                    
-                    photo_url=poster_url_grande,     # Foto principal (saída)
-                    thumbnail_url=poster_url_pequeno, # Miniatura (lista)
-                    
-                    caption=photo_caption,           # Legenda (saída)
+                    title=f"FILME: {movie['title']}", 
+                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}", 
+                    photo_url=poster_url_grande,
+                    thumbnail_url=poster_url_pequeno,
+                    caption=photo_caption,
                     parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
@@ -610,9 +591,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # 4. Processa os resultados de SÉRIES (Convertido para Photo)
     for series in series_from_db:
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-        # Cria URL de thumbnail pequena
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         
+        # O deep link AGORA aponta para o handler que mostra o card de temporadas
         watch_url = f"https://t.me/{bot_username}?start=series_{series['series_id']}"
         
         keyboard = [[
@@ -621,23 +602,19 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Legenda LIMPA (sem link invisível)
         photo_caption = (
             f"📺 *{series['title']}* ({series['year']})\n"
             f"🎭 *Gênero:* {series.get('genre', 'Série')}"
         )
         
         results.append(
-            # USA 'InlineQueryResultPhoto'
             InlineQueryResultPhoto(
                 id=f"series_{series['series_id']}",
-                title=f"SÉRIE: {series['title']}", # Para a lista vertical
-                description=f"{series['year']} - {series.get('genre', 'Série')}", # Para a lista
-                
-                photo_url=poster_url_grande,     # Foto principal (saída)
-                thumbnail_url=poster_url_pequeno, # Miniatura (lista)
-                
-                caption=photo_caption,           # Legenda (saída)
+                title=f"SÉRIE: {series['title']}", 
+                description=f"{series['year']} - {series.get('genre', 'Série')}", 
+                photo_url=poster_url_grande,
+                thumbnail_url=poster_url_pequeno,
+                caption=photo_caption,
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
@@ -648,7 +625,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """(Sem mudança) Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
-        await update.message.delete()
+        try:
+            await update.message.delete()
+        except Exception as e:
+            print(f"Não foi possível deletar a msg /watch: {e}")
     if not context.args:
         return
     movie_id = context.args[0]
