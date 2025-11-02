@@ -530,14 +530,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     query_text = update.inline_query.query
     results = []
     
-    # --- NOVO: LÓGICA DE BUSCA DE EPISÓDIOS ---
-    # Verifica se o usuário está buscando episódios (ex: "See | 1")
+    # --- LÓGICA DE BUSCA DE EPISÓDIOS ---
     if '|' in query_text:
         try:
             series_name, season_query = query_text.split('|', 1)
             series_name = series_name.strip()
             
-            # Tenta extrair o número da temporada
             season_number_match = re.search(r'(\d+)', season_query)
             if not season_number_match:
                 await update.inline_query.answer([], cache_time=10)
@@ -545,39 +543,37 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
             season_number = int(season_number_match.group(1))
             
-            # 1. Busca a série pelo nome
             series_list = db.search_series_by_title(series_name, limit=1)
             if not series_list:
                 await update.inline_query.answer([], cache_time=10)
                 return
                 
-            series_id = series_list[0]['id'] # Pega o ID da série
+            # V--- CORREÇÃO DE KEYERROR AQUI TAMBÉM ---V
+            series_id = series_list[0].get('id')
+            if not series_id:
+                 await update.inline_query.answer([], cache_time=10)
+                 return
+            # ^--- FIM DA CORREÇÃO ---^
             
-            # 2. Busca as temporadas dessa série
             all_seasons = db.get_seasons_for_series(series_id)
-            
-            # 3. Encontra a temporada específica
             target_season = next((s for s in all_seasons if s['season_number'] == season_number), None)
             
             if target_season:
-                # 4. Busca os episódios
                 episodes, _ = db.get_episodes_for_season(target_season['id'])
-                
-                # 5. Cria os resultados (como 'Article' igual ao bot de exemplo)
                 for ep in episodes:
-                    episode_db_id = ep['id'] 
-                    
+                    episode_db_id = ep.get('id') # <-- Usar .get() por segurança
+                    if not episode_db_id:
+                        continue
+                        
                     results.append(
                         InlineQueryResultArticle(
                             id=f"ep_{episode_db_id}",
                             title=f"Episódio {ep['episode_number']}: {ep['title']}",
                             description=f"{series_name} - T{season_number}:E{ep['episode_number']}",
-                            thumbnail_url="https://cdn-icons-png.flaticon.com/512/1042/1042340.png", # Ícone de Play
-                            # Ao clicar, envia o card de áudio
+                            thumbnail_url="https://cdn-icons-png.flaticon.com/512/1042/1042340.png",
                             input_message_content=InputTextMessageContent(
                                 f"Para assistir o Episódio {ep['episode_number']} de {series_name}, "
                                 f"por favor, use o comando /start e navegue até a série."
-                                # (No futuro, podemos fazer isso gerar um /start link direto)
                             )
                         )
                     )
@@ -592,7 +588,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # --- FIM DA LÓGICA DE EPISÓDIOS ---
 
-    # Se a busca estiver vazia, mostra o balão de ajuda normal
     if not query_text:
         help_result = [
             InlineQueryResultArticle(
@@ -606,33 +601,27 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
-    # V--- CORREÇÃO: "HACK" DA LISTA VERTICAL ---V
-    # Adiciona um "Artigo" de Ajuda Fixo no TOPO da lista (sem ícone).
+    # "HACK" DA LISTA VERTICAL
     results.append(
         InlineQueryResultArticle(
             id="static_help",
             title="Ajuda",
             description="Como usar o bot de busca",
-            # Sem thumbnail_url, para ficar igual ao @TuaSerieTSbot
             input_message_content=InputTextMessageContent(
                 "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
                 "Para ver o menu principal, envie o comando /start."
             )
         )
     )
-    # ^--- FIM DA CORREÇÃO ---^
     
     bot_username = context.bot.username
     
     # --- Busca Híbrida (Filmes) ---
     movies_from_db = db.search_movies(query_text, limit=5)
     for movie in movies_from_db:
-        # V--- CORREÇÃO DO BUG 'KeyError' ---V
-        # Pula este filme se ele não tiver 'movie_id' ou 'poster_url'
-        movie_id = movie.get('movie_id')
+        movie_id = movie.get('movie_id') # <--- CORREÇÃO DE SEGURANÇA
         if not movie_id or not movie.get('poster_url'):
             continue
-        # ^--- FIM DA CORREÇÃO ---^
             
         watch_url = f"https://t.me/{bot_username}?start=watch_{movie_id}"
         keyboard = [[
@@ -665,28 +654,23 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # --- Busca Híbrida (Séries) ---
     series_from_db = db.search_series_by_title(query_text, limit=5)
     for series in series_from_db:
-        # V--- CORREÇÃO DO BUG 'KeyError: id' ---V
-        # Pula esta série se ela não tiver 'id' ou 'poster_url'
-        series_id = series.get('id') # <--- SUA CHAVE 'id'
+        # V--- ESTA É A CORREÇÃO DO 'KeyError: id' ---V
+        series_id = series.get('id')
         if not series_id or not series.get('poster_url'):
-            continue
+            continue  # Pula esta série se ela não tiver 'id' ou 'poster'
         # ^--- FIM DA CORREÇÃO ---^
 
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         
-        # URL de deep link (para ver todas as temporadas)
         watch_url = f"https://t.me/{bot_username}?start=series_{series_id}"
         
-        # V--- MUDANÇA: BOTÕES DE TEMPORADA INLINE ---V
         seasons = db.get_seasons_for_series(series_id)
         keyboard = []
-        # Pega as 3 primeiras temporadas para os botões
         for season in seasons[:3]: 
             keyboard.append([
                 InlineKeyboardButton(
                     f"Temporada {season['season_number']}",
-                    # O botão agora auto-digita a busca de episódios!
                     switch_inline_query_current_chat=f"{series['title']} | {season['season_number']}"
                 )
             ])
@@ -696,7 +680,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
              keyboard.append([InlineKeyboardButton("Ver todas temporadas...", url=watch_url)])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        # ^--- FIM DA MUDANÇA ---^
         
         photo_caption = (
             f"📺 *{series['title']}* ({series['year']})\n"
@@ -717,7 +700,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
     await update.inline_query.answer(results, cache_time=30)
-    
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """(Sem mudança) Lida com o comando /watch OU é chamada pela função start."""
