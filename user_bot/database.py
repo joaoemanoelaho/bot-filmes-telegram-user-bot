@@ -285,5 +285,96 @@ def filter_existing_titles(titles: list[str]) -> list[str]:
     except Exception as e:
         print(f"Erro ao filtrar títulos existentes no Supabase: {e}")
         return []
-# Por enquanto, estas são as funções que precisamos.
-# No futuro, adicionaremos aqui: add_movie, is_user_vip, etc.
+
+def search_series_by_title(query: str, limit: int = 10) -> list[dict]:
+    """
+    Busca séries no banco de dados local pelo título (tabela 'series').
+    """
+    if not supabase:
+        print("Conexão com Supabase não disponível.")
+        return []
+    try:
+        # Renomeia 'id' para 'series_id' para consistência
+        response = supabase.table('series') \
+            .select('id, tmdb_id, title, description, poster_url, year, genre') \
+            .ilike('title', f'%{query}%') \
+            .limit(limit) \
+            .execute()
+        
+        # Renomeia a chave 'id' para 'series_id'
+        return [{'series_id': s['id'], **{k: v for k, v in s.items() if k != 'id'}} for s in response.data]
+        
+    except Exception as e:
+        print(f"Erro ao buscar séries no Supabase: {e}")
+    return []
+
+def get_series_by_id(series_id: int) -> dict | None:
+    """Busca UMA série pelo ID interno do nosso banco."""
+    if not supabase: return None
+    try:
+        response = supabase.table('series') \
+            .select('*') \
+            .eq('id', series_id) \
+            .single() \
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar get_series_by_id: {e}")
+        return None
+
+def get_seasons_for_series(series_id: int) -> list[dict]:
+    """Busca todas as temporadas de uma série, ordenadas."""
+    if not supabase: return []
+    try:
+        response = supabase.table('seasons') \
+            .select('id, season_number, name') \
+            .eq('series_id', series_id) \
+            .order('season_number', desc=False) \
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar get_seasons_for_series: {e}")
+        return []
+
+def get_episodes_for_season(season_id: int) -> (list[dict], dict):
+    """
+    Busca todos os episódios de uma temporada, ordenados.
+    Também retorna os dados da temporada (para o botão "Voltar").
+    """
+    if not supabase: return ([], {})
+    try:
+        # Pega a temporada (para saber o series_id e voltar)
+        season_response = supabase.table('seasons') \
+            .select('id, season_number, series_id') \
+            .eq('id', season_id) \
+            .single() \
+            .execute()
+        
+        if not season_response.data:
+            return ([], {})
+            
+        # Pega os episódios
+        episodes_response = supabase.table('episodes') \
+            .select('id, episode_number, title, dubbed_file_id, subtitled_file_id') \
+            .eq('season_id', season_id) \
+            .order('episode_number', desc=False) \
+            .execute()
+            
+        return (episodes_response.data, season_response.data)
+    except Exception as e:
+        print(f"Erro ao buscar get_episodes_for_season: {e}")
+        return ([], {})
+
+def get_episode_by_id(episode_id: int) -> dict | None:
+    """Busca UM episódio pelo ID interno do nosso banco."""
+    if not supabase: return None
+    try:
+        response = supabase.table('episodes') \
+            .select('id, season_id, dubbed_file_id, subtitled_file_id') \
+            .eq('id', episode_id) \
+            .single() \
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar get_episode_by_id: {e}")
+        return None
