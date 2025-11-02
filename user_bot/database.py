@@ -81,23 +81,22 @@ def clear_user_active_payment_id(user_id: int):
         print(f"Erro ao limpar active_payment_id: {e}")
 #
 
-def search_movies(query: str) -> list:
-    """
-    Busca filmes no banco de dados cujo título corresponde à query.
-    A busca é case-insensitive (não diferencia maiúsculas de minúsculas).
-    """
-    if not supabase or not query:
-        return []
-
+def search_movies(query: str, limit: int = 10) -> list[dict]: # <-- MUDANÇA 1
+    """Busca filmes (lógica do seu handler)."""
+    if not supabase: return []
     try:
-        # <<< MUDANÇA AQUI: Adicionamos 'poster_url' na seleção >>>
-        select_query = 'movie_id, title, description, poster_url, year, genre'
-        response = supabase.table('movies').select(select_query).ilike('title', f'%{query}%').limit(10).execute()
-        return response.data
+        # Renomeia 'id' para 'movie_id' para consistência
+        response = supabase.table('movies') \
+            .select('id, title, year, genre, poster_url') \
+            .ilike('title', f'%{query}%') \
+            .limit(limit) \
+            .execute()
+        # Renomeia a chave 'id' para 'movie_id'
+        return [{'movie_id': m['id'], **{k: v for k, v in m.items() if k != 'id'}} for m in response.data]
     except Exception as e:
-        print(f"Erro ao buscar filmes: {e}")
+        print(f"Erro search_movies: {e}")
         return []
-
+    
 def get_movie_by_id(movie_id: int) -> dict | None:
     """Busca um filme específico no banco de dados pelo seu ID."""
     if not supabase:
@@ -378,3 +377,4 @@ def get_episode_by_id(episode_id: int) -> dict | None:
     except Exception as e:
         print(f"Erro ao buscar get_episode_by_id: {e}")
         return None
+    
