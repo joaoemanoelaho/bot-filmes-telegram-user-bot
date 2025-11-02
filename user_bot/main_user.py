@@ -39,7 +39,7 @@ async def startup():
     # ---------------------
     
     try:
-        request = HTTPXRequest(read_timeout=20.0, connect_timeout=10.0)
+        request = HTTPXRequest(read_timeout=60.0, connect_timeout=10.0)
 
         application = Application.builder().token(BOT_TOKEN).request(request).build()
         
