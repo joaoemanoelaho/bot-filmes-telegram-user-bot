@@ -710,6 +710,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
 
+        pass
+
     await update.inline_query.answer(results, cache_time=30)
     
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
