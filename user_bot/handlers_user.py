@@ -369,18 +369,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     # === LÓGICA FINAL (v3.0) - Enviar o vídeo da série ===
     elif callback_data.startswith("series_send_"):
-        await query.answer()
+        try:
+            # Responde ao clique primeiro (para o usuário não ver "carregando")
+            await query.answer() 
+        except Exception as e:
+            # Ignora erros de timeout, o bot continua mesmo assim
+            print(f"Ignorando erro de timeout no query.answer(): {e}")
         parts = callback_data.split('_')
         episode_id = int(parts[2])
         audio_type = parts[3]
         
-        # Deleta a mensagem de botões de áudio (a pequena)
-        await query.delete_message()
-        
         # Pega o episódio
         episode = db.get_episode_by_id(episode_id)
         if not episode:
-            await context.bot.send_message(chat_id=user_id, text="Erro: Episódio não encontrado.")
+            print(f"Erro: Episódio {episode_id} não encontrado no DB.")
             return
 
         # Busca as infos da temporada e série para a legenda
@@ -416,7 +418,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             video_reply_markup = InlineKeyboardMarkup(keyboard)
             
             await context.bot.send_video(
-                chat_id=query.message.chat.id,
+                chat_id=query.from_user.id, # Envia para o usuário que clicou
                 video=file_id_to_send,
                 caption=video_caption,
                 parse_mode="Markdown",
