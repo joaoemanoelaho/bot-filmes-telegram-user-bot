@@ -374,6 +374,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except Exception as e:
             print(f"Ignorando erro de timeout no query.answer(): {e}")
 
+        user_id = query.from_user.id
+        if not db.is_user_vip(user_id):
+            keyboard = [[InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message_text = (
+                f"Olá {query.from_user.first_name}! 👋\n\n"
+                "**Você precisa do Passe Premium para continuar assistindo!**\n\n"
+                "✅ Acesse TODAS as séries disponíveis\n"
+                "✅ Ajuda a manter o bot online e melhorar nosso serviço"
+            )
+            # Envia a mensagem VIP como uma *nova* mensagem
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return # <-- BLOQUEIA O RESTO DA FUNÇÃO
+
         parts = callback_data.split('_')
         episode_id = int(parts[2])
         audio_type = parts[3]
@@ -450,6 +469,32 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     #
     if query_text.startswith("season:"):
         try:
+            user_id = update.inline_query.from_user.id
+            if not db.is_user_vip(user_id):
+                results.append(
+                    InlineQueryResultArticle(
+                        id="vip_required_series",
+                        title="✨ Você precisa do Passe Premium!",
+                        description="Clique aqui para ter acesso a todas as séries.",
+                        # (Pode trocar por um ícone de "cadeado" ou "VIP")
+                        thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
+                        input_message_content=InputTextMessageContent(
+                            message_text=(
+                                f"Olá {update.inline_query.from_user.first_name}! 👋\n\n"
+                                "**Você precisa do Passe Premium!**\n\n"
+                                "✅ Acesse TODAS as séries disponíveis\n"
+                                "✅ Ajuda a manter o bot online e melhorar nosso serviço"
+                            ),
+                            parse_mode="Markdown",
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")
+                            ]])
+                        )
+                    )
+                )
+                await update.inline_query.answer(results, cache_time=5, is_personal=True)
+                return # <-- BLOQUEIA O RESTO DA FUNÇÃO
+            
             season_id = int(query_text.split(':')[1])
             
             episodes, season = db.get_episodes_for_season(season_id)
