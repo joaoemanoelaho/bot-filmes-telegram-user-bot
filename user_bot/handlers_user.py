@@ -525,10 +525,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     (ATUALIZADO) Lida com as buscas em modo inline para FILMES e SÉRIES.
+    Usa o "Hack" de misturar Article + Photo para forçar a lista vertical.
     """
     query_text = update.inline_query.query
     results = []
 
+    # Se a busca estiver vazia, mostra o balão de ajuda normal
     if not query_text:
         help_result = [
             InlineQueryResultArticle(
@@ -542,15 +544,34 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
-    # --- INÍCIO DA MUDANÇA 4: Busca Híbrida ---
+    # V--- INÍCIO DA CORREÇÃO (A "MÁGICA") ---V
+    # 1. Adiciona um "Artigo" de Ajuda Fixo no TOPO da lista.
+    #    Isso força o Telegram a usar a lista vertical.
+    results.append(
+        InlineQueryResultArticle(
+            id="static_help",
+            title="Ajuda",
+            description="Como usar o bot de busca",
+            # Pode trocar esse ícone se quiser
+            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
+            input_message_content=InputTextMessageContent(
+                "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
+                "Para ver o menu principal, envie o comando /start."
+            )
+        )
+    )
+    # ^--- FIM DA MÁGICA ---^
+
     
-    # 1. Busca Filmes e Séries no banco de dados
+    # --- Busca Híbrida (Seu código, agora modificado) ---
+    
+    # 2. Busca Filmes e Séries no banco de dados
     movies_from_db = db.search_movies(query_text, limit=5)
     series_from_db = db.search_series_by_title(query_text, limit=5)
     
     bot_username = context.bot.username
 
-    # 2. Processa os resultados de FILMES (Lógica original)
+    # 3. Processa os resultados de FILMES (Convertido para Photo)
     for movie in movies_from_db:
         if movie.get('poster_url'):
             watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
@@ -560,33 +581,38 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            invisible_char = "\u200b"
-            card_text_content = (
-                f"[{invisible_char}]({movie['poster_url']})"
+            # Legenda LIMPA (sem link invisível)
+            photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
             )
             
+            # Cria URL de thumbnail pequena
+            poster_url_grande = movie.get('poster_url')
+            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
+            
             results.append(
-                InlineQueryResultArticle(
+                # USA 'InlineQueryResultPhoto'
+                InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
-                    title=f"FILME: {movie['title']}",
-                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
-                    thumbnail_url=movie.get('poster_url'),
-                    reply_markup=reply_markup,
-                    input_message_content=InputTextMessageContent(
-                        card_text_content,
-                        parse_mode="Markdown",
-                        disable_web_page_preview=False
-                    )
+                    title=f"FILME: {movie['title']}", # Para a lista vertical
+                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}", # Para a lista
+                    
+                    photo_url=poster_url_grande,     # Foto principal (saída)
+                    thumbnail_url=poster_url_pequeno, # Miniatura (lista)
+                    
+                    caption=photo_caption,           # Legenda (saída)
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
                 )
             )
 
-    # 3. Processa os resultados de SÉRIES (Nova Lógica)
+    # 4. Processa os resultados de SÉRIES (Convertido para Photo)
     for series in series_from_db:
-        poster = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+        poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+        # Cria URL de thumbnail pequena
+        poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         
-        # O deep link para séries
         watch_url = f"https://t.me/{bot_username}?start=series_{series['series_id']}"
         
         keyboard = [[
@@ -595,31 +621,30 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        invisible_char = "\u200b"
-        card_text_content = (
-            f"[{invisible_char}]({poster})"
+        # Legenda LIMPA (sem link invisível)
+        photo_caption = (
             f"📺 *{series['title']}* ({series['year']})\n"
             f"🎭 *Gênero:* {series.get('genre', 'Série')}"
         )
         
         results.append(
-            InlineQueryResultArticle(
+            # USA 'InlineQueryResultPhoto'
+            InlineQueryResultPhoto(
                 id=f"series_{series['series_id']}",
-                title=f"SÉRIE: {series['title']}",
-                description=f"{series['year']} - {series.get('genre', 'Série')}",
-                thumbnail_url=poster,
-                reply_markup=reply_markup,
-                input_message_content=InputTextMessageContent(
-                    card_text_content,
-                    parse_mode="Markdown",
-                    disable_web_page_preview=False
-                )
+                title=f"SÉRIE: {series['title']}", # Para a lista vertical
+                description=f"{series['year']} - {series.get('genre', 'Série')}", # Para a lista
+                
+                photo_url=poster_url_grande,     # Foto principal (saída)
+                thumbnail_url=poster_url_pequeno, # Miniatura (lista)
+                
+                caption=photo_caption,           # Legenda (saída)
+                parse_mode="Markdown",
+                reply_markup=reply_markup
             )
         )
-    # --- FIM DA MUDANÇA 4 ---
 
     await update.inline_query.answer(results, cache_time=30)
-
+    
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """(Sem mudança) Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
