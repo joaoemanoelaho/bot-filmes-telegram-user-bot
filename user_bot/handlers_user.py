@@ -379,11 +379,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = [[InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             message_text = (
-                f"Olá {query.from_user.first_name}! 👋\n\n"
-                "**Você precisa do Passe Premium para continuar assistindo!**\n\n"
-                "✅ Acesse TODAS as séries disponíveis\n"
-                "✅ Ajuda a manter o bot online e melhorar nosso serviço"
+                f"Opa, {query.from_user.first_name}! 👋\n\n"
+                "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                "✅ Libere **TODAS** as séries do catálogo.\n"
+                "✅ Assista filmes e séries sem interrupções.\n"
+                "✅ Ajude a manter o bot online com novos lançamentos!\n\n" 
+                "Clique no botão abaixo para saber mais."
             )
+            keyboard = [[InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             # Envia a mensagem VIP como uma *nova* mensagem
             await context.bot.send_message(
                 chat_id=user_id,
@@ -480,10 +484,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
                         input_message_content=InputTextMessageContent(
                             message_text=(
-                                f"Olá {update.inline_query.from_user.first_name}! 👋\n\n"
-                                "**Você precisa do Passe Premium!**\n\n"
-                                "✅ Acesse TODAS as séries disponíveis\n"
-                                "✅ Ajuda a manter o bot online e melhorar nosso serviço"
+                                f"Ei {update.inline_query.from_user.first_name}! 👋\n\n"
+                                "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                                "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
                             ),
                             parse_mode="Markdown",
                             reply_markup=InlineKeyboardMarkup([[
@@ -708,9 +711,9 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [[InlineKeyboardButton("Adquirir Acesso VIP 🚀", callback_data="main_vip")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = (
-            "✨ *Você precisa do Passe Premium para assistir!* ✨\n\n"
-            "✅ Acesse TODOS os filmes e séries disponíveis.\n"
-            "✅ Ajude a manter o bot online e sempre melhorando.\n\n"
+            "Ei {update.inline_query.from_user.first_name}! 👋\n\n"
+                                "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                                "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online.\n\n"
             "Clique no botão abaixo para se tornar VIP!"
         )
         await context.bot.send_message(
