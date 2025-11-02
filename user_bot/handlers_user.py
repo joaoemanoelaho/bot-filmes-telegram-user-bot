@@ -370,11 +370,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # === LÓGICA FINAL (v3.0) - Enviar o vídeo da série ===
     elif callback_data.startswith("series_send_"):
         try:
-            # Responde ao clique primeiro (para o usuário não ver "carregando")
             await query.answer() 
         except Exception as e:
-            # Ignora erros de timeout, o bot continua mesmo assim
             print(f"Ignorando erro de timeout no query.answer(): {e}")
+
         parts = callback_data.split('_')
         episode_id = int(parts[2])
         audio_type = parts[3]
@@ -385,11 +384,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             print(f"Erro: Episódio {episode_id} não encontrado no DB.")
             return
 
-        # Busca as infos da temporada e série para a legenda
-        season = db.get_episodes_for_season(episode['season_id'])
-        series = db.get_series_by_id(season['series_id'])
-        series_title = series.get('title', 'Série')
+        # --- INÍCIO DA CORREÇÃO ---
+        # A função 'get_episodes_for_season' retorna uma TUPLA: (lista_de_eps, dados_da_temporada)
+        # Precisamos desempacotar ela corretamente:
         
+        lista_de_eps, dados_da_temporada = db.get_episodes_for_season(episode['season_id'])
+        
+        # Agora usamos 'dados_da_temporada' (que é um dicionário)
+        series = db.get_series_by_id(dados_da_temporada['series_id'])
+        series_title = series.get('title', 'Série')
+        season_number = dados_da_temporada.get('season_number', 0) # Pega o número da temporada
+        # --- FIM DA CORREÇÃO ---
+
         file_id_to_send = None
         audio_text = "N/A"
         if audio_type == 'dub' and episode.get('dubbed_file_id'):
@@ -402,15 +408,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if file_id_to_send:
             bot_username = context.bot.username
             
-            # Legenda formatada (igual a dos filmes)
+            # (Ajuste na legenda para usar a variável correta 'season_number')
             video_caption = (
                 f"📺 *{series_title}*\n"
-                f"S{season['season_number']:02d}E{episode['episode_number']:02d}: *{episode.get('title', 'Episódio')}* {audio_text}\n\n"
+                f"S{season_number:02d}E{episode.get('episode_number', 0):02d}: *{episode.get('title', 'Episódio')}* {audio_text}\n\n"
                 f"---\n"
                 f"🍿 Assistido com @{bot_username}"
             )
             
-            # Botões (igual ao dos filmes, mas com 'related_..._series')
             keyboard = [[
                 InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
                 InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series['id']}_series")
@@ -418,7 +423,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             video_reply_markup = InlineKeyboardMarkup(keyboard)
             
             await context.bot.send_video(
-                chat_id=query.from_user.id, # Envia para o usuário que clicou
+                chat_id=query.from_user.id, 
                 video=file_id_to_send,
                 caption=video_caption,
                 parse_mode="Markdown",
@@ -426,7 +431,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 protect_content=True
             )
         else:
-            await context.bot.send_message(chat_id=user_id, text="😔 Desculpe, esta versão do áudio não está disponível.")
+             await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="😔 Desculpe, esta versão do áudio não está disponível."
+            )
     # --- FIM DA LÓGICA DE SÉRIES ---
 
 
