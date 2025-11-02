@@ -262,26 +262,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif callback_data.startswith("related_"):
         await query.answer()
-        movie_id = int(callback_data.split('_')[1])
-        movie = db.get_movie_by_id(movie_id)
-        if not movie:
-            await context.bot.send_message(chat_id=user_id, text="Não consegui encontrar o filme original.")
+        
+        parts = callback_data.split('_')
+        media_id = int(parts[1])
+        media_type = 'movie' # Padrão é filme
+        
+        # Verifica se é uma série (com base no que definimos em 'inline_query_handler')
+        if len(parts) > 2 and parts[2] == 'series':
+            media_type = 'series'
+        
+        title_to_search = None
+        
+        if media_type == 'movie':
+            media_obj = db.get_movie_by_id(media_id)
+            if media_obj:
+                title_to_search = media_obj['title']
+        else: # media_type == 'series'
+            media_obj = db.get_series_by_id(media_id)
+            if media_obj:
+                title_to_search = media_obj['title']
+
+        if not title_to_search:
+            await context.bot.send_message(chat_id=user_id, text="Não consegui encontrar a mídia original.")
             return
-        status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando filmes relacionados a '{movie['title']}'...")
-        recommendations_from_api = tastedive_api.get_recommendations(movie['title'])
+
+        status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando mídias relacionadas a '{title_to_search}'...")
+        
+        # O resto do código é IDÊNTICO, pois a API de recomendação aceita nome de série
+        recommendations_from_api = tastedive_api.get_recommendations(title_to_search)
+        
         if recommendations_from_api:
             existing_recommendations = db.filter_existing_titles(recommendations_from_api)
         else:
             existing_recommendations = []
+            
         if not existing_recommendations:
             await status_msg.edit_text("Não encontrei nenhuma recomendação que já esteja em nosso catálogo.")
             return
+            
         keyboard = []
         for title in existing_recommendations:
             keyboard.append([InlineKeyboardButton(f"🔎 {title}", switch_inline_query_current_chat=title)])
-        message_text = f"Se você gostou de '{movie['title']}', talvez também goste destes:\n\nClique em um título para buscar:"
+            
+        message_text = f"Se você gostou de '{title_to_search}', talvez também goste destes:\n\nClique em um título para buscar:"
         await status_msg.edit_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
-
+        
     # --- LÓGICA PARA O BOTÃO DE PEDIDO (Sem mudança) ---
     elif callback_data == "main_request":
         await query.answer()
@@ -485,9 +510,34 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 series_title = 'Série' # Fallback
             # ▲▲▲ FIM DO CONSERTO DO BUG ▲▲▲
 
+            bot_username = context.bot.username
+
+            keyboard = [
+                [
+                    # Botão para compartilhar a SÉRIE (não o episódio)
+                    InlineKeyboardButton(
+                        "Compartilhar ❤️", 
+                        switch_inline_query=series_title
+                    ),
+                    # Novo botão de relacionados (vamos fazê-lo funcionar na MUDANÇA 2)
+                    InlineKeyboardButton(
+                        "🍿 Relacionados", 
+                        callback_data=f"related_{series['id']}_series" # Novo formato
+                    )
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
             for ep in episodes:
                 ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
                 
+                video_caption_dub = (
+                    f"📺 *{series_title}*\n"
+                    f"S{season['season_number']:02d}E{ep['episode_number']:02d}: *{ep_title}* (Dublado)\n\n"
+                    f"---\n"
+                    f"🍿 Assistido com @{bot_username}"
+                )
+
                 # Adiciona resultado para Dublado
                 if ep.get('dubbed_file_id'):
                     results.append(
@@ -500,6 +550,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
                 
+                video_caption_sub = (
+                    f"📺 *{series_title}*\n"
+                    f"S{season['season_number']:02d}E{ep['episode_number']:02d}: *{ep_title}* (Legendado)\n\n"
+                    f"---\n"
+                    f"🍿 Assistido com @{bot_username}"
+                )
+
                 # Adiciona resultado para Legendado
                 if ep.get('subtitled_file_id'):
                     results.append(
