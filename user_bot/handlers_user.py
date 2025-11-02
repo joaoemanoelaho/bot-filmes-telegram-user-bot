@@ -496,10 +496,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             description=f"🎬 {series_title} | {ep_title}",
                             # (Use uma thumbnail genérica, como o bot de exemplo)
                             thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
+                            reply_markup=reply_markup, # <--- ESTA É A POSIÇÃO CORRETA
                             input_message_content=InputTextMessageContent(
                                 message_text=message_text,
-                                parse_mode="Markdown",
-                                reply_markup=reply_markup
+                                parse_mode="Markdown"
+                                # (Removido daqui)
                             )
                         )
                     )
