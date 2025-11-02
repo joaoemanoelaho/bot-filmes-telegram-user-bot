@@ -629,11 +629,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     for movie in movies_from_db:
         # V--- CORREÇÃO DO BUG 'KeyError' ---V
         # Pula este filme se ele não tiver 'movie_id' ou 'poster_url'
-        if not movie.get('movie_id') or not movie.get('poster_url'):
+        movie_id = movie.get('movie_id')
+        if not movie_id or not movie.get('poster_url'):
             continue
         # ^--- FIM DA CORREÇÃO ---^
             
-        watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+        watch_url = f"https://t.me/{bot_username}?start=watch_{movie_id}"
         keyboard = [[
             InlineKeyboardButton("Assistir ⏯️", url=watch_url),
         ],
@@ -650,7 +651,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         
         results.append(
             InlineQueryResultPhoto(
-                id=f"movie_{movie['movie_id']}",
+                id=f"movie_{movie_id}",
                 title=f"FILME: {movie['title']}",
                 description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
                 photo_url=poster_url_grande,
@@ -666,7 +667,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     for series in series_from_db:
         # V--- CORREÇÃO DO BUG 'KeyError: id' ---V
         # Pula esta série se ela não tiver 'id' ou 'poster_url'
-        series_id = series.get('id')
+        series_id = series.get('id') # <--- SUA CHAVE 'id'
         if not series_id or not series.get('poster_url'):
             continue
         # ^--- FIM DA CORREÇÃO ---^
@@ -717,6 +718,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.inline_query.answer(results, cache_time=30)
     
+
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """(Sem mudança) Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
