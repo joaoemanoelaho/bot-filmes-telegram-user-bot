@@ -87,7 +87,7 @@ async def show_series_details_handler(update: Update, context: ContextTypes.DEFA
     # Cria botões para cada temporada
     for season in seasons:
         # Este será o texto da busca: @SeuBot ep:123 (onde 123 é o ID da temporada)
-        inline_episode_query = f"ep:{season['id']}"
+        inline_episode_query = f"season:{season['id']}"
         
         keyboard.append([
             InlineKeyboardButton(
@@ -448,7 +448,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     #
     # <--- MUDANÇA 5: NOVA LÓGICA PARA BUSCAR EPISÓDIOS ---
     #
-    if query_text.startswith("ep:"):
+    if query_text.startswith("season:"):
         try:
             season_id = int(query_text.split(':')[1])
             
@@ -474,8 +474,16 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             # series = db.get_series_by_id(season['series_id'])
             # series_title = series['title']
 
-            # (Se 'season' JÁ TIVER o título da série, use a linha abaixo)
-            series_title = season.get('series_title', 'Série') # Ajuste se o nome do campo for outro
+            # ▼▼▼ AQUI ESTÁ O CONSERTO DO BUG ▼▼▼
+            # O objeto 'season' NÃO tem o título da série, apenas o 'series_id'.
+            # Precisamos buscar a série para pegar o nome dela.
+            
+            series = db.get_series_by_id(season['series_id'])
+            if series:
+                series_title = series.get('title', 'Série')
+            else:
+                series_title = 'Série' # Fallback
+            # ▲▲▲ FIM DO CONSERTO DO BUG ▲▲▲
 
             for ep in episodes:
                 ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
