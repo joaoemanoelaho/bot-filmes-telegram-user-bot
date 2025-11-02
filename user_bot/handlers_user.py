@@ -386,7 +386,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         # Busca as infos da temporada e série para a legenda
-        season = db.get_season_by_id(episode['season_id'])
+        season = db.get_episodes_for_season(episode['season_id'])
         series = db.get_series_by_id(season['series_id'])
         series_title = series.get('title', 'Série')
         
