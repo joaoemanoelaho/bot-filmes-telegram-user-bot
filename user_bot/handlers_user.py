@@ -517,8 +517,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (v3.1) Lida com as buscas inline.
-    USA O HELPER _get_episode_details_message
+    (v3.2) Lida com as buscas inline.
+    VERSÃO CORRIGIDA: Não usa mais o helper no loop para evitar timeout.
     """
     query_text = update.inline_query.query
     results = []
@@ -528,7 +528,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     #
     if query_text.startswith("season:"):
         try:
-            # --- INÍCIO DA VERIFICAÇÃO VIP 1 (COM NOVA MENSAGEM) ---
+            # --- VERIFICAÇÃO VIP 1 ---
             user_id = update.inline_query.from_user.id
             if not db.is_user_vip(user_id):
                 results.append(
@@ -551,11 +551,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     )
                 )
                 await update.inline_query.answer(results, cache_time=5, is_personal=True)
-                return # <-- BLOQUEIA O RESTO DA FUNÇÃO
+                return
             # --- FIM DA VERIFICAÇÃO VIP 1 ---
 
             season_id = int(query_text.split(':')[1])
             
+            # (episodes é a lista de todos os episódios da temporada)
             episodes, season = db.get_episodes_for_season(season_id)
             
             if not episodes:
@@ -572,14 +573,57 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             series = db.get_series_by_id(season['series_id'])
             series_title = series.get('title', 'Série') if series else 'Série'
 
-            # --- MUDANÇA v3.1: USA O HELPER ---
-            for ep in episodes:
+            # --- CORREÇÃO v3.2: Gerar os botões AQUI ---
+            for i, ep in enumerate(episodes): # (Usamos 'i' para saber o índice)
                 ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
                 
-                # Chama a nova função helper para gerar a mensagem e os botões
-                message_text, reply_markup = await _get_episode_details_message(ep['id'])
+                # 1. Monta o Texto da Mensagem
+                message_text = (
+                    f"📽️ *{series_title}*\n"
+                    f"🎬 *Temporada:* {season['season_number']}\n"
+                    f"🎯 *Episódio:* {ep['episode_number']} - {ep_title}\n"
+                    f"--------------------\n"
+                    f"Selecione o áudio:"
+                )
 
-                if reply_markup: # Só adiciona se o helper funcionou
+                # 2. Monta os Botões de Áudio (Dub/Leg)
+                keyboard = []
+                audio_row = []
+                if ep.get('dubbed_file_id'):
+                    audio_row.append(
+                        InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"series_send_{ep['id']}_dub")
+                    )
+                if ep.get('subtitled_file_id'):
+                    audio_row.append(
+                        InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"series_send_{ep['id']}_sub")
+                    )
+                
+                if audio_row:
+                    keyboard.append(audio_row)
+
+                # 3. Monta os Botões de Navegação (Anterior/Próximo)
+                nav_row = []
+                
+                # Verifica se tem episódio anterior (i > 0)
+                if i > 0:
+                    prev_episode_id = episodes[i - 1]['id']
+                    nav_row.append(
+                        InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
+                    )
+                
+                # Verifica se tem próximo episódio (i < total - 1)
+                if i < len(episodes) - 1:
+                    next_episode_id = episodes[i + 1]['id']
+                    nav_row.append(
+                        InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
+                    )
+                
+                if nav_row:
+                    keyboard.append(nav_row)
+                
+                # 4. Adiciona o resultado
+                if audio_row: # Só mostra se tiver áudio
+                    reply_markup = InlineKeyboardMarkup(keyboard)
                     results.append(
                         InlineQueryResultArticle(
                             id=f"ep_{ep['id']}",
@@ -593,7 +637,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             )
                         )
                     )
-            # --- FIM DA MUDANÇA v3.1 ---
+            # --- FIM DA CORREÇÃO v3.2 ---
         
         except Exception as e:
             print(f"❌ Erro na busca inline de episódios: {e}")
@@ -608,10 +652,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     #
     # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
+    # (Esta parte está correta e não muda)
     #
 
     if not query_text:
-        # (Seu código v3.0 - Sem mudanças)
+        # (código do help_bubble)
         help_result = [
             InlineQueryResultArticle(
                 id="help_bubble",
@@ -626,6 +671,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     results.append(
         InlineQueryResultArticle(
+            # (código do static_help)
             id="static_help",
             title="Ajuda",
             description="Como usar o bot de busca",
@@ -643,7 +689,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 3. Processa os resultados de FILMES (Sem mudança)
     for movie in movies_from_db:
-        # (Seu código v3.0 - Sem mudanças)
+        # (código dos filmes)
         if movie.get('poster_url'):
             watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
             keyboard = [[
@@ -670,9 +716,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
 
-    # 4. Processa os resultados de SÉRIES (v3.0 - Já está correto)
+    # 4. Processa os resultados de SÉRIES (v3.0 - Sem mudança)
     for series in series_from_db:
-        # (Seu código v3.0 - Sem mudanças)
+        # (código das séries)
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         seasons = db.get_seasons_for_series(series['series_id'])
@@ -711,7 +757,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
     await update.inline_query.answer(results, cache_time=30)
-
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Seu código v3.0 - Sem mudanças)
