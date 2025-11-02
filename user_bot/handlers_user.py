@@ -573,58 +573,47 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 3. Processa os resultados de FILMES (Convertido para Photo)
     for movie in movies_from_db:
-        # V--- CORREÇÃO DE KEYERROR DE FILME (POR SEGURANÇA) ---V
-        movie_id = movie.get('movie_id')
-        if not movie_id or not movie.get('poster_url'):
-            continue
-        # ^--- FIM DA CORREÇÃO ---^
+        if movie.get('poster_url'):
+            watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+            keyboard = [[
+                InlineKeyboardButton("Assistir ⏯️", url=watch_url),
+            ],
+            [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
-        watch_url = f"https://t.me/{bot_username}?start=watch_{movie_id}"
-        keyboard = [[
-            InlineKeyboardButton("Assistir ⏯️", url=watch_url),
-        ],
-        [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Legenda LIMPA (sem link invisível)
-        photo_caption = (
-            f"🎬 *{movie['title']}* ({movie['year']})\n"
-            f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
-        )
-        
-        # Cria URL de thumbnail pequena
-        poster_url_grande = movie.get('poster_url')
-        poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
-        
-        results.append(
-            # USA 'InlineQueryResultPhoto'
-            InlineQueryResultPhoto(
-                id=f"movie_{movie_id}",
-                title=f"FILME: {movie['title']}", # Para a lista vertical
-                description=f"{movie['year']} - {movie.get('genre', 'N/A')}", # Para a lista
-                
-                photo_url=poster_url_grande,     # Foto principal (saída)
-                thumbnail_url=poster_url_pequeno, # Miniatura (lista)
-                
-                caption=photo_caption,           # Legenda (saída)
-                parse_mode="Markdown",
-                reply_markup=reply_markup
+            # Legenda LIMPA (sem link invisível)
+            photo_caption = (
+                f"🎬 *{movie['title']}* ({movie['year']})\n"
+                f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
             )
-        )
+            
+            # Cria URL de thumbnail pequena
+            poster_url_grande = movie.get('poster_url')
+            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
+            
+            results.append(
+                # USA 'InlineQueryResultPhoto'
+                InlineQueryResultPhoto(
+                    id=f"movie_{movie['movie_id']}",
+                    title=f"FILME: {movie['title']}", # Para a lista vertical
+                    description=f"{movie['year']} - {movie.get('genre', 'N/A')}", # Para a lista
+                    
+                    photo_url=poster_url_grande,     # Foto principal (saída)
+                    thumbnail_url=poster_url_pequeno, # Miniatura (lista)
+                    
+                    caption=photo_caption,           # Legenda (saída)
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            )
 
     # 4. Processa os resultados de SÉRIES (Convertido para Photo)
     for series in series_from_db:
-        # V--- ESTA É A CORREÇÃO DO 'KeyError: id' ---V
-        series_id = series.get('id')
-        if not series_id or not series.get('poster_url'):
-            continue  # Pula esta série se ela não tiver 'id' ou 'poster'
-        # ^--- FIM DA CORREÇÃO ---^
-            
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
         # Cria URL de thumbnail pequena
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         
-        watch_url = f"https://t.me/{bot_username}?start=series_{series_id}"
+        watch_url = f"https://t.me/{bot_username}?start=series_{series['series_id']}"
         
         keyboard = [[
             InlineKeyboardButton("Ver Temporadas 📺", url=watch_url),
@@ -641,7 +630,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         results.append(
             # USA 'InlineQueryResultPhoto'
             InlineQueryResultPhoto(
-                id=f"series_{series_id}",
+                id=f"series_{series['series_id']}",
                 title=f"SÉRIE: {series['title']}", # Para a lista vertical
                 description=f"{series['year']} - {series.get('genre', 'Série')}", # Para a lista
                 
