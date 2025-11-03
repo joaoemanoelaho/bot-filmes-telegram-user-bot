@@ -39,18 +39,25 @@ async def startup():
     # ---------------------
     
     try:
-        # Aumentamos os timeouts para dar conta de envios de vídeos grandes
+        # 1. Definimos os settings de retry como um dicionário
+        retry_settings_dict = {
+            "total": 3, 
+            "backoff_factor": 5.0 
+        }
+
+        # 2. Passamos os timeouts E os retries AQUI, no HTTPXRequest
         request = HTTPXRequest(
-            read_timeout=300.0,  # 5 minutos (era 60s)
-            connect_timeout=30.0, # 30 segundos (era 20s)
-            write_timeout=300.0, # 5 minutos (era 60s)
-            pool_timeout=30.0   # 30 segundos (era 20s)
+            read_timeout=300.0,
+            connect_timeout=30.0,
+            write_timeout=300.0,
+            pool_timeout=30.0,
+            retry_settings=retry_settings_dict # <-- AQUI É O LUGAR CORRETO
         )
 
+        # 3. O ApplicationBuilder só precisa do .request()
         application = Application.builder() \
             .token(BOT_TOKEN) \
             .request(request) \
-            .bootstrap_retries(5) \
             .build()
         
         application.add_handler(handlers.start_handler)
