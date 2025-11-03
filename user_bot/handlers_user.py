@@ -196,7 +196,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"---\n"
                 f"🍿 Assistido com @{bot_username}"
             )
-            keyboard = [[InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"), InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{movie_id}")]]
+            keyboard = [[
+                InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"), 
+                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{movie_id}")
+            ]]
             video_reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_video(
                 chat_id=query.message.chat.id,
@@ -614,8 +617,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # 4. Monta o teclado final com os botões de navegação
             keyboard = [
                 [ # Linha 1: Compartilhar e Relacionados
-                    InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
                     InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series")
+                ], [
+                    InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title)
                 ]
             ]
             
