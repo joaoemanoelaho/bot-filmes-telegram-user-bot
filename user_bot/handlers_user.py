@@ -537,26 +537,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         episode_id = int(parts[2])
         audio_type = parts[3]
         
-        # Pega o episódio
-        episode = db.get_episode_by_id(episode_id)
-        if not episode:
-            print(f"Erro: Episódio {episode_id} não encontrado no DB.")
+        # ===============================================
+        # === INÍCIO DA OTIMIZAÇÃO (SUBSTITUA AQUI) =====
+        # ===============================================
+        
+        # 1. FAZ A NOVA CHAMADA ÚNICA
+        full_details = db.get_full_episode_details(episode_id)
+        
+        if not full_details:
+            print(f"Erro: get_full_episode_details não encontrou dados para ep {episode_id}")
+            await context.bot.send_message(chat_id=user_id, text="Erro ao carregar dados do episódio.")
             return
 
-        # --- CORREÇÃO v3.0 (que já fizemos) ---
-        lista_de_eps, dados_da_temporada = db.get_episodes_for_season(episode['season_id'])
-        series = db.get_series_by_id(dados_da_temporada['series_id'])
-        series_title = series.get('title', 'Série')
-        season_number = dados_da_temporada.get('season_number', 0)
-        # --- FIM DA CORREÇÃO ---
+        # 2. EXTRAI OS DADOS ANINHADOS (com segurança)
+        episode_data = full_details
+        season_data = full_details.get('seasons')
+        series_data = season_data.get('series') if season_data else None
+
+        if not season_data or not series_data:
+            print(f"Erro: Dados de temporada ou série ausentes no JOIN para ep {episode_id}")
+            await context.bot.send_message(chat_id=user_id, text="Erro ao carregar dados da série.")
+            return
+
+        # 3. PEGA OS DADOS QUE PRECISAMOS
+        series_title = series_data.get('title', 'Série')
+        season_number = season_data.get('season_number', 0)
+        series_id_for_related = series_data.get('id', 0) # Para o botão "Relacionados"
+            
+        # ===============================================
+        # === FIM DA OTIMIZAÇÃO =========================
+        # ===============================================
 
         file_id_to_send = None
         audio_text = "N/A"
-        if audio_type == 'dub' and episode.get('dubbed_file_id'):
-            file_id_to_send = episode['dubbed_file_id']
+        if audio_type == 'dub' and episode_data.get('dubbed_file_id'):
+            file_id_to_send = episode_data['dubbed_file_id']
             audio_text = "(Dublado)"
-        elif audio_type == 'sub' and episode.get('subtitled_file_id'):
-            file_id_to_send = episode['subtitled_file_id']
+        elif audio_type == 'sub' and episode_data.get('subtitled_file_id'):
+            file_id_to_send = episode_data['subtitled_file_id']
             audio_text = "(Legendado)"
         
         if file_id_to_send:
@@ -565,14 +583,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # (Pegamos o 'episode_number' do objeto 'episode' que já temos)
             video_caption = (
                 f"📺 *{series_title}*\n"
-                f"S{season_number:02d}E{episode.get('episode_number', 0):02d}: *{episode.get('title', 'Episódio')}* {audio_text}\n\n"
+                f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
                 f"---\n"
                 f"🍿 Assistido com @{bot_username}"
             )
             
             keyboard = [[
                 InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
-                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series['id']}_series")
+                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related['id']}_series")
             ]]
             # (Não vamos adicionar os botões de navegação AQUI,
             #  para manter a mensagem do vídeo limpa. Eles ficam na msg de áudio)
@@ -592,7 +610,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 text="😔 Desculpe, esta versão do áudio não está disponível."
             )
     # --- FIM DO 'series_send_' ---
-
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -922,7 +939,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
     else:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
-        
+
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Seu código v3.0 - Sem mudanças)
     user_state = context.user_data.get('state')

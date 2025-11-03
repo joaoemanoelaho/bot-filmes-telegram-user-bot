@@ -39,7 +39,7 @@ async def startup():
     # ---------------------
     
     try:
-        request = HTTPXRequest(read_timeout=60.0, connect_timeout=10.0)
+        request = HTTPXRequest(read_timeout=60.0, connect_timeout=20.0, write_timeout=60.0, pool_timeout=20.0)
 
         application = Application.builder().token(BOT_TOKEN).request(request).build()
         
@@ -99,7 +99,7 @@ async def telegram_webhook(request: Request) -> Response:
         
         # Agora é seguro usar application.bot porque esperamos o Event
         update = Update.de_json(data, application.bot) 
-        await application.process_update(update)
+        asyncio.create_task(application.process_update(update))
         print(f"✅ Update processado: {data.get('update_id')}")
         
     except Exception as e:

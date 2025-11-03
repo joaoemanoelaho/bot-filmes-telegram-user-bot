@@ -378,3 +378,36 @@ def get_episode_by_id(episode_id: int) -> dict | None:
         print(f"Erro ao buscar get_episode_by_id: {e}")
         return None
     
+def get_full_episode_details(episode_id: int) -> dict | None:
+    """
+    Busca todos os detalhes de um episódio, temporada e série
+    de uma só vez usando JOINs implícitos do Supabase.
+    Substitui 3-4 chamadas de DB por apenas 1.
+    """
+    if not supabase: return None
+    try:
+        response = supabase.table('episodes') \
+            .select(
+                # Campos que queremos do episódio (tabela 'episodes')
+                'id, episode_number, title, dubbed_file_id, subtitled_file_id, '
+                
+                # 'seasons' é o nome da tabela estrangeira (FK: season_id)
+                'seasons ( '
+                '   season_number, series_id, ' # Campos que queremos da temporada
+                
+                '   series ( ' # 'series' é a tabela estrangeira (FK: series_id)
+                '       id, title' # Campos que queremos da série
+                '   )'
+                ')'
+            ) \
+            .eq('id', episode_id) \
+            .single() \
+            .execute()
+        
+        # O resultado será um JSON aninhado, ex:
+        # { 'id': 1, 'title': 'Ep1', 'seasons': { 'season_number': 1, 'series': { 'title': 'Minha Serie' } } }
+        return response.data
+    
+    except Exception as e:
+        print(f"Erro ao buscar get_full_episode_details: {e}")
+        return None
