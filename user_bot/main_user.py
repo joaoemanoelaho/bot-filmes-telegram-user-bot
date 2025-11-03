@@ -7,13 +7,13 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
-from telegram.ext import Application
+from telegram.ext import Application, RetrySettings
 from telegram.request import HTTPXRequest
 import handlers_user as handlers
 from config import BOT_TOKEN
 
 # --- DEBUG PRINT ---
-print("[DEBUG] Versão do código: 1.1 (com asyncio.Event e Logs)")
+print("[DEBUG] Versão do código: 1.2 (com RetrySettings)")
 # ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -47,7 +47,16 @@ async def startup():
             pool_timeout=30.0   # 30 segundos (era 20s)
         )
 
-        application = Application.builder().token(BOT_TOKEN).request(request).build()
+        retry_settings = RetrySettings(
+            total=3, 
+            backoff_factor=5.0 
+        )
+
+        application = Application.builder() \
+            .token(BOT_TOKEN) \
+            .request(request) \
+            .retry_settings(retry_settings) \
+            .build()
         
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
