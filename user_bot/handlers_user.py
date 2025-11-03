@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 3.2 - NAVEGAÇÃO CORRIGIDA)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 3.3 - CORREÇÃO DE URLs)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -639,8 +639,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (v3.2) Lida com as buscas inline.
-    BOTÕES DE NAVEGAÇÃO REMOVIDOS DAQUI.
+    (v3.3) Lida com as buscas inline.
+    CORRIGIDO o erro 'httpsa://' em todas as URLs.
     """
     query_text = update.inline_query.query
     results = []
@@ -658,7 +658,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         id="vip_required_series",
                         title="🍿 Acesso Pipoca Premium Necessário!",
                         description="Clique aqui para liberar todas as séries do catálogo.",
-                        thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
+                        thumbnail_url="https://i.imgur.com/L3Ew4wt.png", # (Já estava correto aqui)
                         input_message_content=InputTextMessageContent(
                             message_text=(
                                 f"Ei {update.inline_query.from_user.first_name}! 👋\n\n"
@@ -734,7 +734,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             id=f"ep_{ep['id']}",
                             title=f"Episódio : {ep['episode_number']}",
                             description=f"🎬 {series_title} | {ep_title}",
-                            thumbnail_url="httpsa://i.imgur.com/TqA8sE8.png", 
+                            # ===============================================
+                            # === CORREÇÃO 1/5 ==============================
+                            # ===============================================
+                            thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
                             reply_markup=reply_markup, # Botões de Áudio (sem nav)
                             input_message_content=InputTextMessageContent(
                                 message_text=message_text,
@@ -757,7 +760,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     #
     # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
-    # (Esta parte está correta e não muda)
     #
 
     if not query_text:
@@ -767,7 +769,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 id="help_bubble",
                 title="Digite o nome do Filme ou Série",
                 description="Comece a digitar para que os resultados da busca apareçam aqui.",
-                thumbnail_url="httpsa://cdn-icons-png.flaticon.com/512/3931/3931294.png",
+                # ===============================================
+                # === CORREÇÃO 2/5 ==============================
+                # ===============================================
+                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png",
                 input_message_content=InputTextMessageContent("👍")
             )
         ]
@@ -780,7 +785,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             id="static_help",
             title="Ajuda",
             description="Como usar o bot de busca",
-            thumbnail_url="httpsa://cdn-icons-png.flaticon.com/512/189/189665.png", 
+            # ===============================================
+            # === CORREÇÃO 3/5 ==============================
+            # ===============================================
+            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
             input_message_content=InputTextMessageContent(
                 f"Para buscar, digite @{context.bot.username} e o nome do filme.\n\n"
                 "Para ver o menu principal, envie o comando /start."
@@ -796,7 +804,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     for movie in movies_from_db:
         # (código dos filmes)
         if movie.get('poster_url'):
-            watch_url = f"httpsa://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+            # ===============================================
+            # === CORREÇÃO 4/5 ==============================
+            # ===============================================
+            watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
             keyboard = [[
                 InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             ],
@@ -824,7 +835,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # 4. Processa os resultados de SÉRIES (v3.0 - Sem mudança)
     for series in series_from_db:
         # (código das séries)
-        poster_url_grande = series.get('poster_url', 'httpsa://via.placeholder.com/500x750.png?text=Sem+Pôster')
+        # ===============================================
+        # === CORREÇÃO 5/5 ==============================
+        # ===============================================
+        poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         seasons = db.get_seasons_for_series(series['series_id'])
         photo_caption = (
