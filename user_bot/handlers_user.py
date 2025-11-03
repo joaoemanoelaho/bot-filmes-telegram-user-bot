@@ -126,8 +126,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Olá {user.mention_html()}! 👋\n\n"
         "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
         "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
-        "Ficou com dúvidas? Envie o comando /help"
-        "--------------------\n"
+        "Ficou com dúvidas? Envie o comando /help\n\n"
+        "--------------------\n\n"
         f"{community_text}"
     )
     if is_query:
