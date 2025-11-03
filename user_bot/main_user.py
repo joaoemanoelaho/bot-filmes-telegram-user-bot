@@ -8,7 +8,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
-from telegram.request import HTTPXRequest, RetrySettings
+from telegram.ext import RetrySettings
+from telegram.request import HTTPXRequest
 import handlers_user as handlers
 from config import BOT_TOKEN
 
@@ -47,10 +48,12 @@ async def startup():
             pool_timeout=30.0   # 30 segundos (era 20s)
         )
 
-        retry_settings = RetrySettings(
-            total=3, 
-            backoff_factor=5.0 
-        )
+        retry_settings_dict = {
+            "total": 3, 
+            "backoff_factor": 5.0 
+        }
+
+        retry_settings = RetrySettings(**retry_settings_dict)
 
         application = Application.builder() \
             .token(BOT_TOKEN) \
