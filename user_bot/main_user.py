@@ -8,7 +8,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
-from telegram.request import HTTPXRequest
 import handlers_user as handlers
 from config import BOT_TOKEN
 
@@ -39,25 +38,12 @@ async def startup():
     # ---------------------
     
     try:
-        # 1. Definimos os settings de retry como um dicionário
-        retry_settings_dict = {
-            "total": 3, 
-            "backoff_factor": 5.0 
-        }
-
-        # 2. Passamos os timeouts E os retries AQUI, no HTTPXRequest
-        request = HTTPXRequest(
-            read_timeout=300.0,
-            connect_timeout=30.0,
-            write_timeout=300.0,
-            pool_timeout=30.0,
-            retry_settings=retry_settings_dict # <-- AQUI É O LUGAR CORRETO
-        )
-
-        # 3. O ApplicationBuilder só precisa do .request()
         application = Application.builder() \
             .token(BOT_TOKEN) \
-            .request(request) \
+            .read_timeout(300.0) \
+            .connect_timeout(30.0) \
+            .write_timeout(300.0) \
+            .pool_timeout(30.0) \
             .build()
         
         application.add_handler(handlers.start_handler)
