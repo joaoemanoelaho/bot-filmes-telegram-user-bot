@@ -369,7 +369,7 @@ def get_episode_by_id(episode_id: int) -> dict | None:
     if not supabase: return None
     try:
         response = supabase.table('episodes') \
-            .select('id, season_id, dubbed_file_id, subtitled_file_id') \
+            .select('id, season_id, dubbed_file_id, subtitled_file_id, title, episode_number') \
             .eq('id', episode_id) \
             .single() \
             .execute()
@@ -393,7 +393,7 @@ def get_full_episode_details(episode_id: int) -> dict | None:
                 
                 # 'seasons' é o nome da tabela estrangeira (FK: season_id)
                 'seasons ( '
-                '   season_number, series_id, ' # Campos que queremos da temporada
+                '   id, season_number, series_id, ' # Campos que queremos da temporada
                 
                 '   series ( ' # 'series' é a tabela estrangeira (FK: series_id)
                 '       id, title' # Campos que queremos da série

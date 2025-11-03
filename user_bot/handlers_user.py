@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 3.1 - COM NAVEGAÇÃO DE EPISÓDIOS)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 3.2 - NAVEGAÇÃO CORRIGIDA)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -33,8 +33,8 @@ sys.path.insert(0, parent_dir)
 
 async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardMarkup):
     """
-    (NOVO v3.1) Gera o texto e os botões para a mensagem "Selecione o áudio".
-    Isso inclui os botões de áudio (Dub/Leg) e os botões de navegação (Anterior/Próximo).
+    (NOVO v3.2) Gera o texto e os botões para a mensagem "Selecione o áudio".
+    OS BOTÕES DE NAVEGAÇÃO FORAM REMOVIDOS DAQUI.
     """
     try:
         # 1. Pega o episódio, temporada e série
@@ -75,40 +75,15 @@ async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardM
         if audio_row:
              keyboard.append(audio_row)
 
-        # 4. Monta os Botões de Navegação (Anterior/Próximo)
-        nav_row = []
-        prev_episode_id = None
-        next_episode_id = None
-
-        # Encontra o índice do episódio atual na lista
-        current_index = -1
-        for i, ep in enumerate(all_episodes):
-            if ep['id'] == episode_id:
-                current_index = i
-                break
-        
-        if current_index != -1:
-            # Verifica se tem episódio anterior
-            if current_index > 0:
-                prev_episode_id = all_episodes[current_index - 1]['id']
-                nav_row.append(
-                    InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
-                )
-            
-            # Verifica se tem próximo episódio
-            if current_index < len(all_episodes) - 1:
-                next_episode_id = all_episodes[current_index + 1]['id']
-                nav_row.append(
-                    InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
-                )
-        
-        if nav_row:
-            keyboard.append(nav_row)
+        # 4. (REMOVIDO) Botões de Navegação
+        # A navegação agora é adicionada na mensagem do VÍDEO.
         
         return (message_text, InlineKeyboardMarkup(keyboard))
         
     except Exception as e:
         print(f"Erro em _get_episode_details_message: {e}")
+        import traceback
+        traceback.print_exc() # Imprime o traceback completo para debug
         return (f"Erro ao carregar detalhes do episódio: {e}", None)
 
 
@@ -192,8 +167,8 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    (v3.1) Processa cliques em botões.
-    ADICIONADO 'ep_nav_' para navegação.
+    (v3.2) Processa cliques em botões.
+    LÓGICA 'series_send_' ATUALIZADA para incluir navegação no vídeo.
     """
     query = update.callback_query
     callback_data = query.data
@@ -478,7 +453,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 show_alert=True
             )
             
-    # --- NOVO v3.1: LÓGICA DE NAVEGAÇÃO DE EPISÓDIOS ---
+    # --- v3.2: LÓGICA DE NAVEGAÇÃO DE EPISÓDIOS ---
     elif callback_data.startswith("ep_nav_"):
         try:
             await query.answer() # Responde ao clique
@@ -502,10 +477,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 print(f"Erro ao navegar para o próximo ep: {e}")
         else:
             try:
+                # Se não houver botões (sem áudio), apenas edita o texto
                 await query.edit_message_text(text=message_text)
             except Exception: pass
             
-    # --- LÓGICA FINAL (v3.0) - Enviar o vídeo da série ---
+    # --- LÓGICA FINAL (v3.2) - Enviar o vídeo da série ---
     elif callback_data.startswith("series_send_"):
         try:
             await query.answer() 
@@ -538,7 +514,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         audio_type = parts[3]
         
         # ===============================================
-        # === INÍCIO DA OTIMIZAÇÃO (SUBSTITUA AQUI) =====
+        # === INÍCIO DA OTIMIZAÇÃO (v3.1) =====
         # ===============================================
         
         # 1. FAZ A NOVA CHAMADA ÚNICA
@@ -588,20 +564,70 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"🍿 Assistido com @{bot_username}"
             )
             
-            keyboard = [[
-                InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
-                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series")
-            ]]
-            # (Não vamos adicionar os botões de navegação AQUI,
-            #  para manter a mensagem do vídeo limpa. Eles ficam na msg de áudio)
+            # ==============================================================
+            # === INÍCIO DA MUDANÇA v3.2 (ADICIONA BOTÕES DE NAVEGAÇÃO) =====
+            # ==============================================================
+
+            # 1. Pega o ID da temporada (graças à correção no database.py)
+            season_id = season_data.get('id')
+            
+            # 2. Busca todos os episódios da temporada
+            all_episodes = []
+            if season_id:
+                all_episodes, _ = db.get_episodes_for_season(season_id)
+                
+            # 3. Encontra o ep atual, anterior e próximo
+            nav_row = []
+            current_index = -1
+            for i, ep in enumerate(all_episodes):
+                if ep['id'] == episode_id:
+                    current_index = i
+                    break
+            
+            if current_index != -1:
+                # Verifica se tem episódio anterior
+                if current_index > 0:
+                    prev_episode_id = all_episodes[current_index - 1]['id']
+                    nav_row.append(
+                        InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
+                    )
+                
+                # Verifica se tem próximo episódio
+                if current_index < len(all_episodes) - 1:
+                    next_episode_id = all_episodes[current_index + 1]['id']
+                    nav_row.append(
+                        InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
+                    )
+
+            # 4. Monta o teclado final com os botões de navegação
+            keyboard = [
+                [ # Linha 1: Compartilhar e Relacionados
+                    InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
+                    InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series")
+                ]
+            ]
+            
+            if nav_row:
+                keyboard.append(nav_row) # Linha 2: Navegação (se houver)
+
             video_reply_markup = InlineKeyboardMarkup(keyboard)
             
+            # ==============================================================
+            # === FIM DA MUDANÇA v3.2 ======================================
+            # ==============================================================
+            
+            # Deleta a mensagem de "Selecionar Áudio"
+            try:
+                await query.delete_message()
+            except Exception as e:
+                print(f"Não foi possível deletar a msg de áudio: {e}")
+
             await context.bot.send_video(
                 chat_id=query.from_user.id, 
                 video=file_id_to_send,
                 caption=video_caption,
                 parse_mode="Markdown",
-                reply_markup=video_reply_markup,
+                reply_markup=video_reply_markup, # (Agora com os botões de navegação)
                 protect_content=True
             )
         else:
@@ -614,7 +640,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     (v3.2) Lida com as buscas inline.
-    VERSÃO CORRIGIDA: Não usa mais o helper no loop para evitar timeout.
+    BOTÕES DE NAVEGAÇÃO REMOVIDOS DAQUI.
     """
     query_text = update.inline_query.query
     results = []
@@ -697,25 +723,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 if audio_row:
                     keyboard.append(audio_row)
 
-                # 3. Monta os Botões de Navegação (Anterior/Próximo)
-                nav_row = []
-                
-                # Verifica se tem episódio anterior (i > 0)
-                if i > 0:
-                    prev_episode_id = episodes[i - 1]['id']
-                    nav_row.append(
-                        InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
-                    )
-                
-                # Verifica se tem próximo episódio (i < total - 1)
-                if i < len(episodes) - 1:
-                    next_episode_id = episodes[i + 1]['id']
-                    nav_row.append(
-                        InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
-                    )
-                
-                if nav_row:
-                    keyboard.append(nav_row)
+                # 3. (REMOVIDO) Botões de Navegação
+                # A navegação agora é adicionada na mensagem do VÍDEO.
                 
                 # 4. Adiciona o resultado
                 if audio_row: # Só mostra se tiver áudio
@@ -725,8 +734,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             id=f"ep_{ep['id']}",
                             title=f"Episódio : {ep['episode_number']}",
                             description=f"🎬 {series_title} | {ep_title}",
-                            thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
-                            reply_markup=reply_markup, # Botões de Nav e Áudio
+                            thumbnail_url="httpsa://i.imgur.com/TqA8sE8.png", 
+                            reply_markup=reply_markup, # Botões de Áudio (sem nav)
                             input_message_content=InputTextMessageContent(
                                 message_text=message_text,
                                 parse_mode="Markdown"
@@ -758,7 +767,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 id="help_bubble",
                 title="Digite o nome do Filme ou Série",
                 description="Comece a digitar para que os resultados da busca apareçam aqui.",
-                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png",
+                thumbnail_url="httpsa://cdn-icons-png.flaticon.com/512/3931/3931294.png",
                 input_message_content=InputTextMessageContent("👍")
             )
         ]
@@ -771,7 +780,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             id="static_help",
             title="Ajuda",
             description="Como usar o bot de busca",
-            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
+            thumbnail_url="httpsa://cdn-icons-png.flaticon.com/512/189/189665.png", 
             input_message_content=InputTextMessageContent(
                 f"Para buscar, digite @{context.bot.username} e o nome do filme.\n\n"
                 "Para ver o menu principal, envie o comando /start."
@@ -787,7 +796,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     for movie in movies_from_db:
         # (código dos filmes)
         if movie.get('poster_url'):
-            watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+            watch_url = f"httpsa://t.me/{bot_username}?start=watch_{movie['movie_id']}"
             keyboard = [[
                 InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             ],
@@ -815,7 +824,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # 4. Processa os resultados de SÉRIES (v3.0 - Sem mudança)
     for series in series_from_db:
         # (código das séries)
-        poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+        poster_url_grande = series.get('poster_url', 'httpsa://via.placeholder.com/500x750.png?text=Sem+Pôster')
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
         seasons = db.get_seasons_for_series(series['series_id'])
         photo_caption = (
