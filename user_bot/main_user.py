@@ -47,15 +47,10 @@ async def startup():
             pool_timeout=30.0   # 30 segundos (era 20s)
         )
 
-        retry_settings_dict = {
-            "total": 3, 
-            "backoff_factor": 5.0 
-        }
-
         application = Application.builder() \
             .token(BOT_TOKEN) \
             .request(request) \
-            .retry_settings(retry_settings_dict) \
+            .bootstrap_retries(5) \
             .build()
         
         application.add_handler(handlers.start_handler)
