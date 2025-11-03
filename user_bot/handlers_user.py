@@ -465,21 +465,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Gera o novo texto e botões para o episódio selecionado
         message_text, reply_markup = await _get_episode_details_message(new_episode_id)
         
+        # =======================================================
+        # === INÍCIO DA CORREÇÃO (DELETAR E ENVIAR NOVO) =======
+        # =======================================================
+        try:
+            # 1. Deleta a mensagem do vídeo anterior (que continha o botão)
+            await query.delete_message()
+        except Exception as e:
+            print(f"Erro ao deletar msg de vídeo na navegação: {e}")
+
+        # 2. Envia uma NOVA mensagem com a seleção de áudio do próximo ep
+        #    (Como você sugeriu, trocamos 'edit' por 'create'/'send')
         if reply_markup:
-            try:
-                # Edita a mensagem de áudio ATUAL para mostrar os detalhes do NOVO episódio
-                await query.edit_message_text(
-                    text=message_text,
-                    reply_markup=reply_markup,
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                print(f"Erro ao navegar para o próximo ep: {e}")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
         else:
-            try:
-                # Se não houver botões (sem áudio), apenas edita o texto
-                await query.edit_message_text(text=message_text)
-            except Exception: pass
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                parse_mode="Markdown"
+            )
+        # =======================================================
+        # === FIM DA CORREÇÃO ===================================
+        # =======================================================
             
     # --- LÓGICA FINAL (v3.2) - Enviar o vídeo da série ---
     elif callback_data.startswith("series_send_"):
