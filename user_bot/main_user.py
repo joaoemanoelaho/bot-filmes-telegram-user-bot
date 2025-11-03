@@ -39,7 +39,13 @@ async def startup():
     # ---------------------
     
     try:
-        request = HTTPXRequest(read_timeout=60.0, connect_timeout=20.0, write_timeout=60.0, pool_timeout=20.0)
+        # Aumentamos os timeouts para dar conta de envios de vídeos grandes
+        request = HTTPXRequest(
+            read_timeout=300.0,  # 5 minutos (era 60s)
+            connect_timeout=30.0, # 30 segundos (era 20s)
+            write_timeout=300.0, # 5 minutos (era 60s)
+            pool_timeout=30.0   # 30 segundos (era 20s)
+        )
 
         application = Application.builder().token(BOT_TOKEN).request(request).build()
         
