@@ -7,8 +7,8 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
-from telegram.ext import Applications
-from telegram.request import HTTPXRequest, RetrySetting
+from telegram.ext import Application
+from telegram.request import HTTPXRequest, RetrySettings
 import handlers_user as handlers
 from config import BOT_TOKEN
 
