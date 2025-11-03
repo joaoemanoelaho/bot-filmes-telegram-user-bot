@@ -590,7 +590,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             keyboard = [[
                 InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title), 
-                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related['id']}_series")
+                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series")
             ]]
             # (Não vamos adicionar os botões de navegação AQUI,
             #  para manter a mensagem do vídeo limpa. Eles ficam na msg de áudio)
