@@ -406,7 +406,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_text("Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
                 return 
         await query.edit_message_text("⏳ Gerando sua cobrança PIX, aguarde...")
-        vip_price = 2.00 # (Você pode mover isso para o config.py)
+        vip_price = 4.00 # (Você pode mover isso para o config.py)
         payment_data = payments.create_pix_payment(user_id=user_id, amount=vip_price)
         if payment_data and payment_data.get("qr_code_base64"):
             payment_id = payment_data['payment_id']
