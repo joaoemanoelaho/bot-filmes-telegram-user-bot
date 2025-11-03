@@ -161,7 +161,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Seu código v3.0 - Sem mudanças)
+    """
+    (v3.3) Inicia o fluxo de pedido.
+    AGORA COM VERIFICAÇÃO VIP.
+    """
+    # --- INÍCIO DA VERIFICAÇÃO VIP ---
+    user_id = update.effective_user.id
+    if not db.is_user_vip(user_id):
+        keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message_text = (
+            f"Opa, {update.effective_user.first_name}! 👋\n\n"
+            "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
+            "Assine para poder pedir filmes/séries e ver o que está em alta."
+        )
+        await update.message.reply_text(
+            text=message_text,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+        return
+    # --- FIM DA VERIFICAÇÃO VIP ---
+
+    # (Usuário é VIP, o código continua)
     context.user_data['state'] = 'awaiting_request'
     await update.message.reply_text(
         "Qual filme ou série você gostaria de ver no catálogo?\n\n"
@@ -250,6 +272,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # --- LÓGICA DE PEDIDO (Sem mudança) ---
     elif callback_data == "main_request":
         # (Seu código v3.0 - Sem mudanças)
+        # --- INÍCIO DA VERIFICAÇÃO VIP ---
+        user_id = query.from_user.id
+        if not db.is_user_vip(user_id):
+            await query.answer() 
+            keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
+                        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message_text = (
+                f"Opa, {query.from_user.first_name}! 👋\n\n"
+                "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
+                "Assine para poder pedir filmes/séries e ver o que está em alta."
+            )
+            try:
+                await query.edit_message_text( 
+                    text=message_text,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            except Exception: pass
+            return
+        # --- FIM DA VERIFICAÇÃO VIP ---
         await query.answer()
         context.user_data['state'] = 'awaiting_request'
         await query.edit_message_text(
@@ -260,6 +303,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # --- LÓGICA TOP FILMES (Sem mudança) ---
     elif callback_data == "main_top":
         # (Seu código v3.0 - Sem mudanças)
+        # --- INÍCIO DA VERIFICAÇÃO VIP ---
+        user_id = query.from_user.id
+        if not db.is_user_vip(user_id):
+            await query.answer() 
+            keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
+                        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message_text = (
+                f"Opa, {query.from_user.first_name}! 👋\n\n"
+                "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
+                "Assine para poder pedir filmes/séries e ver o que está em alta."
+            )
+            try:
+                await query.edit_message_text( 
+                    text=message_text,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            except Exception: pass
+            return
+        # --- FIM DA VERIFICAÇÃO VIP ---
         await query.answer()
         keyboard = [
             [InlineKeyboardButton("🏆 Top Semana", callback_data="top_7")],
@@ -290,35 +354,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         message_text = f"🏆 **Top 10 {period_text}** 🏆\n\nClique em um filme abaixo para ver mais detalhes:"
         await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
     elif callback_data.startswith("show_card_"):
-        # (Seu código v3.0 - Sem mudanças)
         await query.answer()
         movie_id = int(callback_data.split('_')[2])
         movie = db.get_movie_by_id(movie_id)
+        
         if not movie:
-            await query.edit_message_text("Desculpe, este filme não foi encontrado.")
+            try:
+                # Tenta editar a mensagem de erro
+                await query.edit_message_text("Desculpe, este filme não foi encontrado.")
+            except Exception:
+                pass # Ignora se não puder editar
             return
-        await query.delete_message()
+        
+        # Deleta a mensagem de ranking (a lista de botões)
+        try:
+            await query.delete_message() 
+        except Exception:
+            pass # Ignora se a msg for muito antiga
+
         bot_username = context.bot.username
         watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+        
         keyboard = [[
             InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        invisible_char = "\u200b"
-        card_text_content = (
-            f"[{invisible_char}]({movie['poster_url']})"
+        
+        # --- CORREÇÃO DA LEGENDA ---
+        # Remove o link invisível e usa .get() para segurança
+        photo_caption = (
             f"🎬 *{movie['title']}* ({movie['year']})\n"
-            f"🎭 *Gênero:* {movie['genre']}"
+            f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
         )
-        await context.bot.send_message(
+        
+        # --- CORREÇÃO DO ENVIO ---
+        # Troca 'send_message' por 'send_photo'
+        await context.bot.send_photo(
             chat_id=user_id,
-            text=card_text_content,
+            photo=movie['poster_url'], # URL do pôster vai aqui
+            caption=photo_caption,
             parse_mode="Markdown",
-            reply_markup=reply_markup,
-            disable_web_page_preview=False
+            reply_markup=reply_markup
         )
-
+        
     # --- LÓGICA DE VOLTAR AO MENU (Sem mudança) ---
     elif callback_data == "back_to_main":
         await query.answer()
@@ -759,7 +838,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.inline_query.answer(results, cache_time=30)
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Seu código v3.0 - Sem mudanças)
+    """
+    (v3.3) Lida com o comando /watch OU é chamada pela função start.
+    AGORA COM BOTÕES DE ÁUDIO DINÂMICOS.
+    """
     if update.message:
         try: await update.message.delete()
         except Exception: pass
@@ -767,7 +849,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
     movie_id = context.args[0]
     user_id = update.effective_user.id
     
-    # (Adicionada a mensagem customizada do "Pipoca Premium")
+    # (Verificação VIP - já está correta)
     if not db.is_user_vip(user_id):
         keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -787,30 +869,60 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     # (Usuário é VIP, continua)
     movie = db.get_movie_by_id(movie_id)
+    
     if movie and movie.get('poster_url'):
+        
+        # --- INÍCIO DA MUDANÇA (BOTÕES DINÂMICOS) ---
+        
+        # 1. Cria uma lista vazia para os botões de áudio
+        audio_buttons = []
+        
+        # 2. Verifica se o 'dubbed_file_id' existe (não é None, não é "")
+        if movie.get('dubbed_file_id'):
+            audio_buttons.append(
+                InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"play_{movie_id}_dub")
+            )
+        
+        # 3. Verifica se o 'subtitled_file_id' existe
+        if movie.get('subtitled_file_id'):
+            audio_buttons.append(
+                InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"play_{movie_id}_sub")
+            )
+
+        # 4. Monta a legenda principal
         caption = (
-            f"🎬 *{movie['title']}*\n\n"
-            f"🗓️ *Ano:* {movie['year']}\n"
-            f"🎭 *Gênero:* {movie['genre']}\n\n"
+            f"🎬 *{movie['title']}* ({movie['year']})\n\n"
+            f"🎭 *Gênero:* {movie.get('genre', 'N/A')}\n\n"
             f"📝 *Sinopse:* {movie.get('description', 'N/A')}\n\n"
             "---\n"
-            "Selecione o áudio desejado abaixo:"
         )
-        keyboard = [[
-            InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"play_{movie_id}_dub"),
-            InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"play_{movie_id}_sub")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # 5. Monta o teclado (reply_markup)
+        keyboard = []
+        reply_markup = None # Começa como Nulo
+        
+        if audio_buttons:
+            # Se encontrou botões (Dub ou Leg), adiciona-os ao teclado
+            caption += "Selecione o áudio desejado abaixo:"
+            keyboard.append(audio_buttons) # Adiciona a linha de botões
+            reply_markup = InlineKeyboardMarkup(keyboard)
+        else:
+            # Se não encontrou NENHUMA versão, avisa o usuário
+            caption += "😔 *Este filme está no catálogo, mas ainda estamos aguardando os arquivos de vídeo.*"
+            # reply_markup continua Nulo (sem botões)
+
+        # --- FIM DA MUDANÇA ---
+            
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=movie['poster_url'],
             caption=caption,
             parse_mode="Markdown",
-            reply_markup=reply_markup
+            reply_markup=reply_markup # (Agora é dinâmico)
         )
     else:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
-
+        
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Seu código v3.0 - Sem mudanças)
     user_state = context.user_data.get('state')
