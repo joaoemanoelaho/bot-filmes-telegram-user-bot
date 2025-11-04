@@ -211,7 +211,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 show_alert=True
             )
             return
-        context.user_data['last_action_time'] = now
         # --- FIM DO BLOQUEIO ---
 
         async with DB_SEMAPHORE:
@@ -247,6 +246,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     protect_content=True
                 )
                 await db.log_movie_view(movie_id=movie_id, user_id=user_id)
+
+                context.user_data['last_action_time'] = now
             else:
                 await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
 
@@ -265,7 +266,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 show_alert=True
             )
             return
-        context.user_data['last_action_time'] = now
         # --- FIM DO BLOQUEIO ---
 
         async with DB_SEMAPHORE:
@@ -299,6 +299,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 keyboard.append([InlineKeyboardButton(f"🔎 {title}", switch_inline_query_current_chat=title)])
             message_text = f"Se você gostou de '{title_to_search}', talvez também goste destes:\n\nClique em um título para buscar:"
             await status_msg.edit_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+            context.user_data['last_action_time'] = now
 
     # --- LÓGICA DE PEDIDO (Sem mudança) ---
     elif callback_data == "main_request":
@@ -470,6 +472,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 if status == 'created':
                     await query.edit_message_text("Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
                     return 
+                
+            context.user_data['last_pix_request'] = now
+
             await query.edit_message_text("⏳ Gerando sua cobrança PIX, aguarde...")
             vip_price = 4.00 # (Você pode mover isso para o config.py)
             payment_data = payments.create_pix_payment(user_id=user_id, amount=vip_price)
@@ -513,8 +518,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     show_alert=True
                 )
                 return
+            
             context.user_data['last_payment_check'] = now
+
             status = await payments.check_payment_status(payment_id)
+
             if status == 'paid':
                 await query.answer()
                 await db.set_user_as_vip(user_id, duration_days=30)
@@ -586,7 +594,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 show_alert=True
             )
             return
-        context.user_data['last_action_time'] = now
         # --- FIM DO BLOQUEIO ---
         
         async with DB_SEMAPHORE:
@@ -738,6 +745,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     reply_markup=video_reply_markup, # (Agora com os botões de navegação)
                     protect_content=True
                 )
+
+                context.user_data['last_action_time'] = now
             else:
                 await context.bot.send_message(
                     chat_id=query.from_user.id,
