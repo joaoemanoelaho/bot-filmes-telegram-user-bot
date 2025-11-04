@@ -5,9 +5,16 @@
 import os
 import sys
 import asyncio # <-- 1. IMPORTAMOS ASYNCIO
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import datetime, timedelta # Para manipulação de datas
+
+
 
 # Tenta criar a conexão com o Supabase.
 try:
