@@ -3,6 +3,7 @@
 import httpx
 from config import TASTEDIVE_API_KEY
 import unicodedata
+# (Não precisamos de asyncio aqui, pois httpx já é async)
 
 API_URL = "https://tastedive.com/api/similar"
 
@@ -10,7 +11,8 @@ def remove_accents(input_str: str) -> str:
     nfkd_form = unicodedata.normalize('NFKD', input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
-def get_recommendations(movie_title: str, limit: int = 5) -> list[str] | None:
+# 1. Função agora é 'async def'
+async def get_recommendations(movie_title: str, limit: int = 5) -> list[str] | None:
     """
     Busca recomendações de filmes na API TasteDive, simulando um navegador.
     """
@@ -30,20 +32,21 @@ def get_recommendations(movie_title: str, limit: int = 5) -> list[str] | None:
     }
     
     try:
-        with httpx.Client() as client:
-            response = client.get(API_URL, params=params, headers=headers)
+        # 2. Cliente agora é 'AsyncClient'
+        async with httpx.AsyncClient() as client:
+            # 3. A chamada de rede agora usa 'await'
+            response = await client.get(API_URL, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
             
-            # V--- A CORREÇÃO ESTÁ AQUI (letras minúsculas) ---V
             results = data.get("similar", {}).get("results", [])
             
             if not results:
                 return []
                 
             return [result["name"] for result in results]
-            # ^--- FIM DA CORREÇÃO ---^
 
     except Exception as e:
         print(f"Erro ao buscar recomendações no TasteDive: {e}")
         return None
+    

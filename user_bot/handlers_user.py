@@ -38,16 +38,16 @@ async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardM
     """
     try:
         # 1. Pega o episódio, temporada e série
-        episode = db.get_episode_by_id(episode_id)
+        episode = await db.get_episode_by_id(episode_id)
         if not episode:
             return ("Erro: Episódio não encontrado.", None)
             
         # Usamos a função do DB que já retorna a lista de eps E os dados da temporada
-        all_episodes, season = db.get_episodes_for_season(episode['season_id'])
+        all_episodes, season = await db.get_episodes_for_season(episode['season_id'])
         if not season:
              return ("Erro: Temporada não encontrada.", None)
 
-        series = db.get_series_by_id(season['series_id'])
+        series = await db.get_series_by_id(season['series_id'])
         series_title = series.get('title', 'Série')
         ep_title = episode.get('title', f"Episódio {episode['episode_number']}")
 
@@ -105,8 +105,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if payload.startswith("watch_"):
             movie_id = payload.split('_')[1]
             context.args = [movie_id]
-            return await watch_command_handler(update, context)
-    db.get_or_create_user(user_id=user.id, first_name=user.first_name)
+            await watch_command_handler(update, context)
+            return
+        
+    await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
     keyboard = [
         [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),],
         [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
@@ -152,7 +154,7 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
     """
     # --- INÍCIO DA VERIFICAÇÃO VIP ---
     user_id = update.effective_user.id
-    if not db.is_user_vip(user_id):
+    if not await db.is_user_vip(user_id):
         keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = (
@@ -192,7 +194,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         _, movie_id_str, audio_choice = callback_data.split('_')
         movie_id = int(movie_id_str)
         await query.edit_message_caption(caption="⏳ Carregando seu filme, por favor aguarde...")
-        movie = db.get_movie_by_id(movie_id)
+        movie = await db.get_movie_by_id(movie_id)
         if not movie:
             await query.edit_message_caption(caption="Erro: Filme não encontrado.")
             return
@@ -219,7 +221,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 reply_markup=video_reply_markup,
                 protect_content=True
             )
-            db.log_movie_view(movie_id=movie_id, user_id=user_id)
+            await db.log_movie_view(movie_id=movie_id, user_id=user_id)
         else:
             await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
 
@@ -234,18 +236,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             media_type = 'series'
         title_to_search = None
         if media_type == 'movie':
-            media_obj = db.get_movie_by_id(media_id)
+            media_obj = await db.get_movie_by_id(media_id)
             if media_obj: title_to_search = media_obj['title']
         else: 
-            media_obj = db.get_series_by_id(media_id)
+            media_obj = await db.get_series_by_id(media_id)
             if media_obj: title_to_search = media_obj['title']
         if not title_to_search:
             await context.bot.send_message(chat_id=user_id, text="Não consegui encontrar a mídia original.")
             return
         status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando mídias relacionadas a '{title_to_search}'...")
-        recommendations_from_api = tastedive_api.get_recommendations(title_to_search)
+        recommendations_from_api = await tastedive_api.get_recommendations(title_to_search)
         if recommendations_from_api:
-            existing_recommendations = db.filter_existing_titles(recommendations_from_api)
+            existing_recommendations = await db.filter_existing_titles(recommendations_from_api)
         else:
             existing_recommendations = []
         if not existing_recommendations:
@@ -262,7 +264,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # (Seu código v3.0 - Sem mudanças)
         # --- INÍCIO DA VERIFICAÇÃO VIP ---
         user_id = query.from_user.id
-        if not db.is_user_vip(user_id):
+        if not await db.is_user_vip(user_id):
             await query.answer() 
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
                         [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
@@ -293,7 +295,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # (Seu código v3.0 - Sem mudanças)
         # --- INÍCIO DA VERIFICAÇÃO VIP ---
         user_id = query.from_user.id
-        if not db.is_user_vip(user_id):
+        if not await db.is_user_vip(user_id):
             await query.answer() 
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
                         [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
@@ -329,7 +331,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if period_days == 7: period_text = "da Semana"
         if period_days == 30: period_text = "do Mês"
         await query.edit_message_text(f"🏆 Buscando o Top 10 {period_text}, aguarde...")
-        trending_movies = db.get_trending(period_days=period_days)
+        trending_movies = await db.get_trending(period_days=period_days)
         if not trending_movies:
             await query.edit_message_text("Ainda não há dados suficientes para gerar um ranking.")
             return
@@ -344,7 +346,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif callback_data.startswith("show_card_"):
         await query.answer()
         movie_id = int(callback_data.split('_')[2])
-        movie = db.get_movie_by_id(movie_id)
+        movie = await db.get_movie_by_id(movie_id)
         
         if not movie:
             try:
@@ -394,14 +396,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # --- LÓGICA DE PAGAMENTO VIP (v3.1 - COM MENSAGENS NOVAS) ---
     elif callback_data == "main_vip":
         await query.answer()
-        if db.is_user_vip(user_id):
+        if await db.is_user_vip(user_id):
             await query.edit_message_text("✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
             return
-        user_details = db.get_user_details(user_id)
+        user_details = await db.get_user_details(user_id)
         active_payment_id = user_details.get('active_payment_id') if user_details else None
         if active_payment_id:
             await query.edit_message_text("⏳ Verificando seu pagamento anterior, aguarde...")
-            status = payments.check_payment_status(active_payment_id)
+            status = await payments.check_payment_status(active_payment_id)
             if status == 'created':
                 await query.edit_message_text("Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
                 return 
@@ -410,7 +412,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         payment_data = payments.create_pix_payment(user_id=user_id, amount=vip_price)
         if payment_data and payment_data.get("qr_code_base64"):
             payment_id = payment_data['payment_id']
-            db.set_user_active_payment_id(user_id, payment_id)
+            await db.set_user_active_payment_id(user_id, payment_id)
             base64_string = payment_data['qr_code_base64']
             if ',' in base64_string:
                 base64_string = base64_string.split(',')[1]
@@ -448,11 +450,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
         context.user_data['last_payment_check'] = now
-        status = payments.check_payment_status(payment_id)
+        status = await payments.check_payment_status(payment_id)
         if status == 'paid':
             await query.answer()
-            db.set_user_as_vip(user_id, duration_days=30)
-            db.clear_user_active_payment_id(user_id)
+            await db.set_user_as_vip(user_id, duration_days=30)
+            await db.clear_user_active_payment_id(user_id)
             await query.message.delete()
             await context.bot.send_message(
                 chat_id=user_id,
@@ -515,7 +517,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # --- INÍCIO DA VERIFICAÇÃO VIP 2 (COM NOVA MENSAGEM) ---
         user_id = query.from_user.id
-        if not db.is_user_vip(user_id):
+        if not await db.is_user_vip(user_id):
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             message_text = (
@@ -543,7 +545,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # ===============================================
         
         # 1. FAZ A NOVA CHAMADA ÚNICA
-        full_details = db.get_full_episode_details(episode_id)
+        full_details = await db.get_full_episode_details(episode_id)
         
         if not full_details:
             print(f"Erro: get_full_episode_details não encontrou dados para ep {episode_id}")
@@ -599,7 +601,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # 2. Busca todos os episódios da temporada
             all_episodes = []
             if season_id:
-                all_episodes, _ = db.get_episodes_for_season(season_id)
+                all_episodes, _ = await db.get_episodes_for_season(season_id)
                 
             # 3. Encontra o ep atual, anterior e próximo
             nav_row = []
@@ -678,7 +680,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             # --- VERIFICAÇÃO VIP 1 ---
             user_id = update.inline_query.from_user.id
-            if not db.is_user_vip(user_id):
+            if not await db.is_user_vip(user_id):
                 results.append(
                     InlineQueryResultArticle(
                         id="vip_required_series",
@@ -705,7 +707,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             season_id = int(query_text.split(':')[1])
             
             # (episodes é a lista de todos os episódios da temporada)
-            episodes, season = db.get_episodes_for_season(season_id)
+            episodes, season = await db.get_episodes_for_season(season_id)
             
             if not episodes:
                 # (código de "nenhum episódio")
@@ -718,7 +720,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.inline_query.answer(results, cache_time=10)
                 return
 
-            series = db.get_series_by_id(season['series_id'])
+            series = await db.get_series_by_id(season['series_id'])
             series_title = series.get('title', 'Série') if series else 'Série'
 
             # --- CORREÇÃO v3.2: Gerar os botões AQUI ---
@@ -822,8 +824,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     )
     
-    movies_from_db = db.search_movies(query_text, limit=5)
-    series_from_db = db.search_series_by_title(query_text, limit=5)
+    movies_from_db = await db.search_movies(query_text, limit=5)
+    series_from_db = await db.search_series_by_title(query_text, limit=5)
     bot_username = context.bot.username
 
     # 3. Processa os resultados de FILMES (Sem mudança)
@@ -866,7 +868,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # ===============================================
         poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
         poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
-        seasons = db.get_seasons_for_series(series['series_id'])
+        seasons = await db.get_seasons_for_series(series['series_id'])
         photo_caption = (
             f"📺 *{series['title']}*\n\n"
             f"🗓️ *Ano:* {series['year']}\n"
@@ -916,7 +918,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     
     # (Verificação VIP - já está correta)
-    if not db.is_user_vip(user_id):
+    if not await db.is_user_vip(user_id):
         keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = (
@@ -934,7 +936,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     # (Usuário é VIP, continua)
-    movie = db.get_movie_by_id(movie_id)
+    movie = await db.get_movie_by_id(movie_id)
     
     if movie and movie.get('poster_url'):
         
@@ -996,7 +998,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         del context.user_data['state']
         requested_title = update.message.text
         user_id = update.effective_user.id
-        if db.add_request(user_id=user_id, title=requested_title):
+        if await db.add_request(user_id=user_id, title=requested_title):
             await update.message.reply_text(
                 f"✅ Obrigado! Sua sugestão \"{requested_title}\" foi registrada e será analisada.\n\n"
                 "Se aprovada, estará disponível em nosso catálogo em até 24 horas!"
