@@ -730,16 +730,16 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 title="🍿 Acesso Pipoca Premium Necessário!",
                                 description="Clique aqui para liberar todas as séries do catálogo.",
                                 thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
+                                reply_markup=InlineKeyboardMarkup([[
+                                        InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")
+                                    ]]),
                                 input_message_content=InputTextMessageContent(
                                     message_text=(
                                         f"Ei {update.inline_query.from_user.first_name}! 👋\n\n"
                                         "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
                                         "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
                                     ),
-                                    parse_mode="Markdown",
-                                    reply_markup=InlineKeyboardMarkup([[
-                                        InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")
-                                    ]])
+                                    parse_mode="Markdown",                                    
                                 )
                             )
                         )
