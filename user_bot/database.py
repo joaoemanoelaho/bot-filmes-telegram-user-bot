@@ -102,7 +102,7 @@ async def search_movies(query: str, limit: int = 10) -> list[dict]:
         response = await asyncio.to_thread(
             supabase.table('movies')
             .select('movie_id, title, year, genre, poster_url')
-            .ilike('title', f'%{query}%')
+            .text_search('title_tsv', query, config='portuguese', ts_type='websearch')
             .limit(limit)
             .execute
         )
@@ -305,7 +305,7 @@ async def search_series_by_title(query: str, limit: int = 10) -> list[dict]:
         response = await asyncio.to_thread(
             supabase.table('series')
             .select('id, tmdb_id, title, description, poster_url, year, genre')
-            .ilike('title', f'%{query}%')
+            .text_search('title_tsv', query, config='portuguese', ts_type='websearch')
             .limit(limit)
             .execute
         )
