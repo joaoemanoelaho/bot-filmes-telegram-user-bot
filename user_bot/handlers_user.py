@@ -730,17 +730,29 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             #
             # === ROTA 1: BUSCA DE EPISÓDIOS ===
             #
+            
+            # --- CORREÇÃO (v5.13): Novo formato de query: season:<id>:<offset> ---
+            # (O formato antigo 'season:<id>' também funciona para a página 1)
+            season_id = None
             if query_text.startswith("season:"):
+                parts = query_text.split(':')
+                try:
+                    season_id = int(parts[1])
+                    if len(parts) > 2:
+                        current_offset = int(parts[2]) # Pega o offset do *botão*
+                except (IndexError, ValueError):
+                    season_id = None
+            
+            if season_id:
+            # --- FIM DA CORREÇÃO ---
                 try:
                     user_id = update.inline_query.from_user.id
                     is_vip = await db.is_user_vip(user_id)
-                    season_id = int(query_text.split(':')[1])
                     
                     # --- CORREÇÃO (v5.13): Define o limite e chama com offset ---
                     # Usamos 48 para deixar espaço para os botões de nav
                     page_limit = 48 
                     
-                    # Otimização (v5.11): Chama a função otimizada
                     episodes, season = await db.get_episodes_for_season(
                         season_id, 
                         limit=page_limit, 
@@ -827,11 +839,53 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     )
                                 )
                         
-                        # --- CORREÇÃO (v5.13): Define o next_offset ---
+                        # --- CORREÇÃO (v5.13): Botões Manuais de Paginação ---
+                        nav_buttons = []
+                        if current_offset > 0:
+                            # Se não estamos na página 1, adiciona botão "Anterior"
+                            prev_offset = max(0, current_offset - page_limit)
+                            nav_buttons.append(
+                                InlineQueryResultArticle(
+                                    id=f"page_prev_{prev_offset}",
+                                    title="⬅️ Página Anterior",
+                                    description=f"Voltar para Eps {prev_offset + 1}-{current_offset}",
+                                    thumbnail_url="https://i.imgur.com/b6PZt7H.png", # Seta para esquerda
+                                    input_message_content=InputTextMessageContent(
+                                        f"Carregando página anterior..."
+                                    ),
+                                    reply_markup=InlineKeyboardMarkup([[
+                                        InlineKeyboardButton(
+                                            "Clique para carregar ⬅️",
+                                            switch_inline_query_current_chat=f"season:{season_id}:{prev_offset}"
+                                        )
+                                    ]])
+                                )
+                            )
+                        
                         if len(episodes) == page_limit:
                             # Se a busca retornou o NÚMERO MÁXIMO (48),
                             # assumimos que há uma próxima página.
-                            next_offset = str(current_offset + page_limit)
+                            next_offset_manual = current_offset + page_limit
+                            nav_buttons.append(
+                                InlineQueryResultArticle(
+                                    id=f"page_next_{next_offset_manual}",
+                                    title="Próxima Página ➡️",
+                                    description=f"Carregar Eps {next_offset_manual + 1}-{next_offset_manual + page_limit}",
+                                    thumbnail_url="https://i.imgur.com/FwOxDqO.png", # Seta para direita
+                                    input_message_content=InputTextMessageContent(
+                                        f"Carregando próxima página..."
+                                    ),
+                                    reply_markup=InlineKeyboardMarkup([[
+                                        InlineKeyboardButton(
+                                            "Clique para carregar ➡️",
+                                            switch_inline_query_current_chat=f"season:{season_id}:{next_offset_manual}"
+                                        )
+                                    ]])
+                                )
+                            )
+                        
+                        # Adiciona os botões de navegação DEPOIS dos resultados
+                        results.extend(nav_buttons)
                         # --- FIM DA CORREÇÃO ---
 
                         cache_time = 10
@@ -921,12 +975,14 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     keyboard = []
                     if seasons:
                         for season in seasons:
+                            # --- CORREÇÃO (v5.13): Inicia a paginação com offset 0 ---
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query_current_chat=f"season:{season['id']}" 
+                                    switch_inline_query_current_chat=f"season:{season['id']}:0" 
                                 )
                             ])
+                            # --- FIM DA CORREÇÃO ---
                     keyboard.append([
                         InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])
                     ])
@@ -953,12 +1009,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            # --- CORREÇÃO (v5.13): Adiciona o next_offset aqui ---
+            # --- CORREÇÃO (v5.13): Removemos o next_offset daqui ---
+            # A paginação agora é 100% manual pelos botões
             await update.inline_query.answer(
                 results, 
                 cache_time=cache_time, 
                 is_personal=is_personal,
-                next_offset=next_offset # <-- A MÁGICA DA PAGINAÇÃO
+                next_offset=None # <-- IMPORTANTE: Desliga o scroll infinito
             )
             break 
         except NetworkError as e:
