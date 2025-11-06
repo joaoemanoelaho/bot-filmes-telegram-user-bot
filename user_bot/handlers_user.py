@@ -91,7 +91,7 @@ async def _send_episode_list(update_or_query: Update | CallbackQueryHandler, con
     Envia ou edita uma mensagem com a lista de episódios de uma temporada.
     Isso evita duplicação de código entre o /start e o button_handler.
     """
-    is_query = hasattr(update_or_query, 'message') # Se for um query, tem 'message'
+    is_query = hasattr(update_or_query, 'edit_message_text') # Se for um query, tem 'message'
     
     episodes, season = await db.get_episodes_for_season(season_id)
     if not episodes:
