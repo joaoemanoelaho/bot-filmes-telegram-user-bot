@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.12 - OTIMIZAÇÃO N+1 e LIMITE DE 50)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.13 - PAGINAÇÃO)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -42,7 +42,6 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
-        # OTIMIZAÇÃO: 3 chamadas ao DB -> 1 chamada
         details = await db.get_full_episode_details(episode_id) 
         if not details:
             return ("Erro: Episódio não encontrado.", None)
@@ -705,9 +704,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await placeholder_msg.edit_text(message_text)
             
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.12) ===
-# =================================================================
-# =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -963,7 +959,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             if attempt + 1 == max_retries:
                 print("Falha ao enviar inline_query após 3 tentativas.")
                 return 
-            await asyncio.sleep(1)
+            await asyncio.sleep(1) 
+
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
     # (Função da v5.10 - Sem alterações)
