@@ -347,10 +347,13 @@ async def get_seasons_for_series(series_id: int) -> list[dict]:
         print(f"Erro ao buscar get_seasons_for_series: {e}")
         return []
 
-async def get_episodes_for_season(season_id: int) -> (list[dict], dict):
+#
+# --- CORREÇÃO (v5.13): Função agora aceita limit e offset ---
+#
+async def get_episodes_for_season(season_id: int, limit: int = 48, offset: int = 0) -> (list[dict], dict):
     """
-    Busca todos os episódios de uma temporada, ordenados.
-    Também retorna os dados da temporada (para o botão "Voltar").
+    Busca uma 'página' de episódios de uma temporada, ordenados.
+    Também retorna os dados da temporada.
     """
     if not supabase: return ([], {})
     try:
@@ -366,12 +369,13 @@ async def get_episodes_for_season(season_id: int) -> (list[dict], dict):
         if not season_response.data:
             return ([], {})
             
-        # Pega os episódios
+        # Pega os episódios com paginação
         episodes_response = await asyncio.to_thread(
             supabase.table('episodes')
             .select('id, episode_number, title, dubbed_file_id, subtitled_file_id')
             .eq('season_id', season_id)
             .order('episode_number', desc=False)
+            .range(offset, offset + limit - 1)  # <-- A MÁGICA DA PAGINAÇÃO
             .execute
         )
             
@@ -379,6 +383,7 @@ async def get_episodes_for_season(season_id: int) -> (list[dict], dict):
     except Exception as e:
         print(f"Erro ao buscar get_episodes_for_season: {e}")
         return ([], {})
+# --- FIM DA CORREÇÃO ---
 
 async def get_episode_by_id(episode_id: int) -> dict | None:
     """Busca UM episódio pelo ID interno do nosso banco."""

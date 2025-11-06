@@ -707,16 +707,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.12) ===
 # =================================================================
+# =================================================================
+# === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
+# =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     results = []
     cache_time = 30 # Padrão
     is_personal = False
+    next_offset = None # <--- CORREÇÃO: Inicializa o next_offset
     
     try:
         async with DB_SEMAPHORE:
             query_text = update.inline_query.query
             bot_username = context.bot.username
+            
+            # --- CORREÇÃO (v5.13): Lê o offset atual ---
+            current_offset = int(update.inline_query.offset) if update.inline_query.offset else 0
             
             #
             # === ROTA 1: BUSCA DE EPISÓDIOS ===
@@ -724,13 +731,19 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             if query_text.startswith("season:"):
                 try:
                     user_id = update.inline_query.from_user.id
-                    
-                    # --- OTIMIZAÇÃO (v5.11): 3 chamadas ao DB de uma vez ---
                     is_vip = await db.is_user_vip(user_id)
                     season_id = int(query_text.split(':')[1])
-                    episodes, season = await db.get_episodes_for_season(season_id)
+                    
+                    # --- CORREÇÃO (v5.13): Define o limite e chama com offset ---
+                    page_limit = 48 # Deixa 2 espaços para botões de navegação
+                    episodes, season = await db.get_episodes_for_season(
+                        season_id, 
+                        limit=page_limit, 
+                        offset=current_offset
+                    )
                     
                     if not is_vip:
+                        # (Lógica do VIP sem alteração)
                         results.append(
                             InlineQueryResultArticle(
                                 id="vip_required_series",
@@ -756,7 +769,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         cache_time = 5
                         is_personal = True
                 
-                    elif not episodes:
+                    elif not episodes and current_offset == 0:
+                        # (Lógica de 'sem episódios' sem alteração)
                         results.append(InlineQueryResultArticle(
                             id="no_eps_found",
                             title="Nenhum episódio encontrado",
@@ -770,14 +784,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
                         
+                        # (Loop otimizado da v5.11 - sem alteração)
                         for i, ep in enumerate(episodes):
-                            
-                            # --- CORREÇÃO (v5.12): Limite de 50 resultados ---
-                            # O limite é 50, mas usamos 49 para segurança.
-                            if len(results) >= 49:
-                                break 
-                            # --- FIM DA CORREÇÃO ---
-
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
                             
                             message_text = (
@@ -813,6 +821,14 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         )
                                     )
                                 )
+                        
+                        # --- CORREÇÃO (v5.13): Define o next_offset ---
+                        if len(episodes) == page_limit:
+                            # Se recebemos o limite total, 
+                            # assumimos que há uma próxima página.
+                            next_offset = str(current_offset + page_limit)
+                        # --- FIM DA CORREÇÃO ---
+
                         cache_time = 10
                         is_personal = True
                 
@@ -826,6 +842,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
             #
             # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
+            # (Sem alterações, mas também usará o next_offset=None)
             #
             elif not query_text:
                 results = [
@@ -932,19 +949,21 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            # --- CORREÇÃO (v5.13): Adiciona o next_offset aqui ---
             await update.inline_query.answer(
                 results, 
                 cache_time=cache_time, 
-                is_personal=is_personal
+                is_personal=is_personal,
+                next_offset=next_offset # <-- A MÁGICA DA PAGINAÇÃO
             )
+            # --- FIM DA CORREÇÃO ---
             break 
         except NetworkError as e:
             print(f"Erro de rede ao enviar inline_query (tentativa {attempt + 1}/{max_retries}): {e}")
             if attempt + 1 == max_retries:
                 print("Falha ao enviar inline_query após 3 tentativas.")
                 return 
-            await asyncio.sleep(1) 
-
+            await asyncio.sleep(1)
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
     # (Função da v5.10 - Sem alterações)
