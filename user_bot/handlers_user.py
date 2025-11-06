@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.9 - CORREÇÃO DE ORDEM DO PAYLOAD)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.10 - FLUXO AUTO-LIMPEZA)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -38,8 +38,8 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 # =================================================================
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
 # =================================================================
-# (Helper da v5.8 - Sem alterações)
-async def _get_episode_details_message(episode_id: int, bot_username: str) -> tuple[str, InlineKeyboardMarkup]:
+# --- CORREÇÃO (v5.10): Helper agora aceita um ID para deletar ---
+async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
         episode = await db.get_episode_by_id(episode_id) 
@@ -65,18 +65,24 @@ async def _get_episode_details_message(episode_id: int, bot_username: str) -> tu
         keyboard = []
         audio_row = []
         
+        # --- LÓGICA DE URL (com delete_msg_id) ---
         if episode.get('dubbed_file_id'):
             payload = f"watch_ep_{episode['id']}_dub"
+            if delete_msg_id:
+                payload += f"_del_{delete_msg_id}" # Adiciona o ID da msg para deletar
             url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
                 InlineKeyboardButton("Dublado 🇧🇷", url=url)
             )
         if episode.get('subtitled_file_id'):
             payload = f"watch_ep_{episode['id']}_sub"
+            if delete_msg_id:
+                payload += f"_del_{delete_msg_id}" # Adiciona o ID da msg para deletar
             url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
                 InlineKeyboardButton("Legendado 🇺🇸", url=url)
             )
+        # --- FIM DA LÓGICA ---
         
         if audio_row:
              keyboard.append(audio_row)
@@ -107,37 +113,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if context.args:
             payload = context.args[0]
             
-            #
-            # --- CORREÇÃO (v5.9): A ORDEM AQUI FOI INVERTIDA ---
-            #
+            # --- CORREÇÃO (v5.10): Deleta a msg /start do usuário ---
+            if not is_query:
+                try:
+                    await message_to_reply.delete()
+                except Exception as e:
+                    print(f"[WARN] Não foi possível deletar a msg /start do usuário: {e}")
             
             # 1. Payload de Episódio (Mais específico, vem primeiro)
             if payload.startswith("watch_ep_"):
                 try:
+                    # --- CORREÇÃO (v5.10): Parse do novo payload ---
                     parts = payload.split('_')
                     episode_id = int(parts[2])
                     audio_type = parts[3]
+                    msg_to_delete_id = None
+                    if len(parts) > 5 and parts[4] == 'del':
+                        msg_to_delete_id = int(parts[5])
                     
+                    # Deleta a msg de áudio (se veio da navegação)
+                    if msg_to_delete_id:
+                        try:
+                            await context.bot.delete_message(chat_id=user.id, message_id=msg_to_delete_id)
+                        except Exception as e:
+                            print(f"[WARN] Não foi possível deletar msg de áudio {msg_to_delete_id}: {e}")
+                    # --- FIM DA CORREÇÃO ---
+
                     await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
                     
                     # 1.1. VERIFICAR VIP
                     if not await db.is_user_vip(user.id):
-                        await message_to_reply.reply_text(
-                            f"Opa, {user.first_name}! 👋\n\n"
-                            "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                            "Clique no botão abaixo para ver as opções.",
+                        # (Envia msg de Premium)
+                        await context.bot.send_message(
+                            chat_id=user.id,
+                            text=(
+                                f"Opa, {user.first_name}! 👋\n\n"
+                                "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                                "Clique no botão abaixo para ver as opções."
+                            ),
                             parse_mode="Markdown"
                         )
                         # Simula um clique no botão "main_vip"
                         class FakeQuery:
                             def __init__(self, usr, msg):
                                 self.from_user = usr
-                                self.message = msg
+                                self.message = msg # Usa a msg (já deletada) como base, mas não importa
                                 self.data = "main_vip"
                             async def answer(self): pass
-                            async def edit_message_text(self, *a, **kw): await msg.reply_text(*a, **kw)
+                            async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
                             async def delete_message(self): pass
-                            async def reply_photo(self, *a, **kw): await msg.reply_photo(*a, **kw)
+                            async def reply_photo(self, *a, **kw): await context.bot.send_photo(user.id, *a, **kw)
                         class FakeUpdate:
                             def __init__(self, usr, msg):
                                 self.effective_user = usr
@@ -147,11 +172,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         return
 
                     # 1.2. USUÁRIO É VIP: Enviar o vídeo
-                    await message_to_reply.reply_text("⏳ Carregando seu episódio...")
+                    # --- CORREÇÃO (v5.10): Deleta a msg "Carregando" ---
+                    status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
                     
                     full_details = await db.get_full_episode_details(episode_id)
                     if not full_details:
-                        await message_to_reply.reply_text("Erro ao carregar dados do episódio.")
+                        await status_msg.edit_text("Erro ao carregar dados do episódio.")
                         return
 
                     episode_data = full_details
@@ -159,7 +185,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     series_data = season_data.get('series') if season_data else None
 
                     if not season_data or not series_data:
-                        await message_to_reply.reply_text("Erro ao carregar dados da série.")
+                        await status_msg.edit_text("Erro ao carregar dados da série.")
                         return
                     
                     file_id_to_send = None
@@ -224,25 +250,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             reply_markup=video_reply_markup,
                             protect_content=True
                         )
+                        await status_msg.delete() # Deleta o "Carregando..."
                     else:
-                        await message_to_reply.reply_text("😔 Desculpe, esta versão do áudio não está disponível.")
-
+                        await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
+                    # --- FIM DA CORREÇÃO ---
                 except Exception as e:
                     print(f"Erro ao processar payload watch_ep_: {e}")
-                    await message_to_reply.reply_text("Erro ao carregar episódio.")
+                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.") # Envia nova msg
                 return
 
             # 2. Payload de Filme (Mais geral, vem depois)
             elif payload.startswith("watch_"):
-                movie_id = payload.split('_')[1]
-                context.args = [movie_id]
-                await watch_command_handler(update, context) # <-- Agora só vai receber ID de filme
+                # O /start já foi deletado lá em cima
+                context.args = [payload.split('_')[1]] # Recria o context.args
+                await watch_command_handler(update, context, message_deletada=True) # Passa um flag
                 return
-            
-            # --- FIM DA CORREÇÃO ---
                 
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
         
+        # (Lógica do menu principal, sem alteração)
         keyboard = [
             [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),],
             [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
@@ -304,7 +330,6 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função da v5.8 - Sem alterações)
     query = update.callback_query
     
     if not query:
@@ -319,6 +344,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
 
     if callback_data.startswith("play_"):
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -382,6 +408,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
 
     elif callback_data.startswith("related_"):
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -430,6 +457,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             context.user_data['last_action_time'] = time.time()
 
     elif callback_data == "main_request":
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -459,6 +487,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
     
     elif callback_data == "main_top":
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -491,6 +520,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
             
     elif callback_data.startswith("top_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             period_days = int(callback_data.split('_')[1])
@@ -515,6 +545,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
             
     elif callback_data.startswith("show_card_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             movie_id = int(callback_data.split('_')[2])
@@ -560,6 +591,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start(update, context)
         
     elif callback_data == "main_vip":
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
         cooldown = 60 
@@ -574,7 +606,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         async with DB_SEMAPHORE:
             await query.answer()
             if await db.is_user_vip(user_id):
-                await query.edit_message_text("✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
+                try: await query.edit_message_text("✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
+                except Exception: pass # Pode falhar se for um 'fake query' do /start
                 return
                 
             user_details = await db.get_user_details(user_id)
@@ -628,6 +661,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
 
     elif callback_data.startswith("check_payment_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             payment_id = callback_data.split('_')[2]
             now = time.time()
@@ -659,6 +693,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     show_alert=True
                 )
             
+    # --- CORREÇÃO (v5.10): Lógica de Navegação ---
     elif callback_data.startswith("ep_nav_"):
         async with DB_SEMAPHORE:
             try:
@@ -668,35 +703,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             new_episode_id = int(callback_data.split('_')[2])
             
-            bot_username = context.bot.username
-            message_text, reply_markup = await _get_episode_details_message(new_episode_id, bot_username)
-            
             try:
-                await query.delete_message()
+                await query.delete_message() # Deleta o vídeo antigo
             except Exception as e:
                 print(f"Erro ao deletar msg de vídeo na navegação: {e}")
 
+            # 1. Envia msg placeholder para obter o ID
+            placeholder_msg = await context.bot.send_message(chat_id=user_id, text="Carregando opções...")
+            
+            # 2. Cria os botões de URL, passando o ID da msg placeholder
+            bot_username = context.bot.username
+            message_text, reply_markup = await _get_episode_details_message(
+                new_episode_id, 
+                bot_username, 
+                delete_msg_id=placeholder_msg.message_id # <--- A MÁGICA
+            )
+            
+            # 3. Edita a msg placeholder com o conteúdo real
             if reply_markup:
-                await context.bot.send_message(
-                    chat_id=user_id,
+                await placeholder_msg.edit_text(
                     text=message_text,
                     reply_markup=reply_markup,
                     parse_mode="Markdown"
                 )
             else:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=message_text,
-                    parse_mode="Markdown"
-                )
+                await placeholder_msg.edit_text(message_text) # Mostra erro
             
-    # Lógica 'series_send_' foi removida pois agora é tratada pelo /start
+    # Lógica 'series_send_' foi removida
 
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.9) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função da v5.8 - Sem alterações)
+    # (Função da v5.9 - Sem alterações)
     results = []
     cache_time = 30 # Padrão
     is_personal = False
@@ -716,8 +755,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 title="🍿 Acesso Pipoca Premium Necessário!",
                                 description="Clique aqui para liberar todas as séries do catálogo.",
                                 thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
-                                
-                                # --- CORREÇÃO (v5.8): Botão de premium é URL ---
                                 reply_markup=InlineKeyboardMarkup([[
                                         InlineKeyboardButton(
                                             "Quero meu Acesso Premium! 🚀", 
@@ -756,7 +793,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
                             for i, ep in enumerate(episodes):
                                 ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
-                                message_text, reply_markup = await _get_episode_details_message(ep['id'], bot_username)
+                                # Passa 'delete_msg_id=None' (implícito), que é o correto para a busca inline
+                                message_text, reply_markup = await _get_episode_details_message(ep['id'], bot_username) 
                                 
                                 if reply_markup: 
                                     results.append(
@@ -859,7 +897,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query_current_chat=f"season:{season['id']}" # <-- Voltamos ao ..._current_chat
+                                    switch_inline_query_current_chat=f"season:{season['id']}" 
                                 )
                             ])
                     keyboard.append([
@@ -902,15 +940,20 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await asyncio.sleep(1) 
 
 
-async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
+# --- CORREÇÃO (v5.10): Modificamos o watch_command_handler ---
+async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
     async with DB_SEMAPHORE:
-        if update.message:
+        # Se a msg /start JÁ FOI DELETADA, não tenta deletar de novo.
+        if update.message and not message_deletada:
             try: await update.message.delete()
             except Exception: pass
+            
         if not context.args: return
         movie_id = context.args[0]
         user_id = update.effective_user.id
+        
+        # Como a msg /start foi deletada, temos que enviar novas mensagens
+        chat_id_to_reply = update.effective_chat.id
         
         if not await db.is_user_vip(user_id):
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
@@ -922,7 +965,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 "✅ Ajude a manter o bot online com novos lançamentos!"
             )
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id_to_reply,
                 text=message_text,
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
@@ -960,14 +1003,14 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 caption += "😔 *Este filme está no catálogo, mas ainda estamos aguardando os arquivos de vídeo.*"
                 
             await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id_to_reply,
                 photo=movie['poster_url'],
                 caption=caption,
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
+            await context.bot.send_message(chat_id=chat_id_to_reply, text="Filme não encontrado ou sem pôster disponível.")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
