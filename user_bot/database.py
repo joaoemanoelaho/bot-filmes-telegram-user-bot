@@ -1,6 +1,5 @@
 #
 # Arquivo para gerenciar toda a interação com o banco de dados Supabase.
-# (VERSÃO 5.13 - PAGINAÇÃO)
 #
 
 import os
