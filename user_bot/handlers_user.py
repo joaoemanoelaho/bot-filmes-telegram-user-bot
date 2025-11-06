@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.3 - CORREÇÃO DO ERRO 'reply_markup' NO INLINE)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.7 - FLUXO HÍBRIDO: URL + INLINE)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -39,7 +39,7 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
 # =================================================================
 # (Esta função não mudou)
-async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardMarkup):
+async def _get_episode_details_message(episode_id: int) -> tuple[str, InlineKeyboardMarkup]:
     try:
         episode = await db.get_episode_by_id(episode_id) 
         if not episode:
@@ -86,8 +86,6 @@ async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardM
 # =================================================================
 # === HANDLERS PRINCIPAIS (COM PROTEÇÃO) ===
 # =================================================================
-# (Todas as funções de 'start' até 'series_send_' estão iguais à v5.2,
-# pois elas já estavam corretas.)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     async with DB_SEMAPHORE:
@@ -98,14 +96,82 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             user = update.effective_user
             message_to_reply = update.message
+        
+        # --- Lógica de Payload (Deep Link) ---
         if context.args:
             payload = context.args[0]
+            
+            # 1. Payload de Filme (Já existia)
             if payload.startswith("watch_"):
                 movie_id = payload.split('_')[1]
                 context.args = [movie_id]
                 await watch_command_handler(update, context)
                 return
-                
+            
+            # --- CORREÇÃO (v5.7) ---
+            # 2. Payload de Temporada (Híbrido)
+            elif payload.startswith("load_season_"):
+                try:
+                    season_id = int(payload.split('_')[-1])
+                    await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
+                    
+                    # 2.1. VERIFICAR VIP
+                    if not await db.is_user_vip(user.id):
+                        await message_to_reply.reply_text(
+                            f"Opa, {user.first_name}! 👋\n\n"
+                            "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                            "Clique no botão abaixo para ver as opções.",
+                            parse_mode="Markdown"
+                        )
+                        # Simula um clique no botão "main_vip"
+                        class FakeQuery:
+                            def __init__(self, usr, msg):
+                                self.from_user = usr
+                                self.message = msg
+                                self.data = "main_vip"
+                            async def answer(self): pass
+                            async def edit_message_text(self, *a, **kw): await msg.reply_text(*a, **kw)
+                            async def delete_message(self): pass
+                            async def reply_photo(self, *a, **kw): await msg.reply_photo(*a, **kw)
+                        class FakeUpdate:
+                            def __init__(self, usr, msg):
+                                self.effective_user = usr
+                                self.callback_query = FakeQuery(usr, msg)
+                                self.message = msg
+                        await button_handler(FakeUpdate(user, message_to_reply), context)
+                        return
+
+                    # 2.2. USUÁRIO É VIP: Enviar o "Botão Helper"
+                    _, season = await db.get_episodes_for_season(season_id) # Busca só p/ pegar o nome
+                    series = await db.get_series_by_id(season['series_id'])
+                    
+                    message_text = (
+                        f"📺 *{series.get('title', 'Série')}*\n\n"
+                        f"Você selecionou a *Temporada {season.get('season_number', '?')}*.\n\n"
+                        "Clique no botão abaixo para carregar os episódios:"
+                    )
+                    
+                    # Este botão abre a lista INLINE no chat ATUAL (que agora é o privado)
+                    keyboard = [[
+                        InlineKeyboardButton(
+                            "📺 Ver Episódios (Inline)", 
+                            switch_inline_query_current_chat=f"season:{season_id}"
+                        )
+                    ]]
+                    
+                    await message_to_reply.reply_text(
+                        message_text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode="Markdown"
+                    )
+
+                except Exception as e:
+                    print(f"Erro ao processar payload load_season_: {e}")
+                    await message_to_reply.reply_text("Erro ao carregar temporada.")
+                return
+            # --- FIM DA CORREÇÃO ---
+            
+        # Se não houver payload, continua com o menu principal
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
         
         keyboard = [
@@ -144,6 +210,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_id = update.effective_user.id
         if not await db.is_user_vip(user_id):
@@ -169,13 +236,23 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    
+    # --- CORREÇÃO: Lógica para 'FakeQuery' do /start ---
+    if not query:
+        if isinstance(update, object) and hasattr(update, 'callback_query'):
+             query = update.callback_query
+        else:
+             print("[ERRO] button_handler recebeu um update inválido.")
+             return
+    # ----------------------------------------------------
+    
     callback_data = query.data
     user_id = query.from_user.id
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
 
     # --- LÓGICA PARA ENVIAR O FILME ---
     if callback_data.startswith("play_"):
-        
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -240,7 +317,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # --- LÓGICA DE RELACIONADOS ---
     elif callback_data.startswith("related_"):
-        
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -290,6 +367,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # --- LÓGICA DE PEDIDO ---
     elif callback_data == "main_request":
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -320,6 +398,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # --- LÓGICA TOP FILMES ---
     elif callback_data == "main_top":
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -352,6 +431,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
             
     elif callback_data.startswith("top_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             period_days = int(callback_data.split('_')[1])
@@ -376,6 +456,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
             
     elif callback_data.startswith("show_card_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             movie_id = int(callback_data.split('_')[2])
@@ -423,7 +504,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     # --- LÓGICA DE PAGAMENTO VIP ---
     elif callback_data == "main_vip":
-        
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
         cooldown = 60 
@@ -478,7 +559,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 keyboard = [[InlineKeyboardButton("✅ Já Paguei", callback_data=f"check_payment_{payment_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.delete_message()
+                
+                # --- Correção para FakeQuery ---
+                if hasattr(query, 'delete_message'):
+                    await query.delete_message()
+                elif hasattr(query, 'message') and hasattr(query.message, 'delete'):
+                     await query.message.delete()
+                # -------------------------------
+                
                 await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
                     parse_mode="Markdown", reply_markup=reply_markup
@@ -487,6 +575,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
 
     elif callback_data.startswith("check_payment_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             payment_id = callback_data.split('_')[2]
             now = time.time()
@@ -520,6 +609,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
     # --- v3.2: LÓGICA DE NAVEGAÇÃO DE EPISÓDIOS ---
     elif callback_data.startswith("ep_nav_"):
+        # (Função sem alteração)
         async with DB_SEMAPHORE:
             try:
                 await query.answer() 
@@ -551,7 +641,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
     # --- LÓGICA FINAL (v3.2) - Enviar o vídeo da série ---
     elif callback_data.startswith("series_send_"):
-
+        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -571,8 +661,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
+                # (Lógica de verificação de VIP da v5.6)
+                try: await query.delete_message()
+                except Exception: pass
+                
                 keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                reply_markup_premium = InlineKeyboardMarkup(keyboard)
                 message_text = (
                     f"Opa, {query.from_user.first_name}! 👋\n\n"
                     "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
@@ -584,7 +678,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     chat_id=user_id,
                     text=message_text,
                     parse_mode="Markdown",
-                    reply_markup=reply_markup
+                    reply_markup=reply_markup_premium
                 )
                 return 
                 
@@ -687,7 +781,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             protect_content=True
                         )
                         # Se funcionou, sai do loop
-                        break
+                        break 
                     except NetworkError as e:
                         print(f"Erro de rede ao enviar vídeo de série (tentativa {attempt + 1}/{max_retries}): {e}")
                         if attempt + 1 == max_retries:
@@ -705,7 +799,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # --- FIM DO 'series_send_' ---
 
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.3) ===
+# === INLINE QUERY HANDLER (COM CORREÇÃO v5.7) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
@@ -718,7 +812,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             query_text = update.inline_query.query
             
             #
-            # === ROTA 1: BUSCA DE EPISÓDIOS ===
+            # === ROTA 1: BUSCA DE EPISÓDIOS (Sua lógica v5.3) ===
             #
             if query_text.startswith("season:"):
                 try:
@@ -739,7 +833,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
                                         "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
                                     ),
-                                    parse_mode="Markdown",                                    
+                                    parse_mode="Markdown",                                     
                                 )
                             )
                         )
@@ -892,12 +986,22 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     keyboard = []
                     if seasons:
                         for season in seasons:
+                            #
+                            # --- ESTA É A CORREÇÃO (v5.7) ---
+                            #
+                            # Usamos um botão de URL com o novo payload 'load_season_'
+                            #
+                            payload = f"load_season_{season['id']}"
+                            url = f"https://t.me/{bot_username}?start={payload}"
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query=f"season:{season['id']}" 
+                                    url=url # <-- AQUI!
                                 )
                             ])
+                            #
+                            # --- FIM DA CORREÇÃO ---
+                            #
                     keyboard.append([
                         InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])
                     ])
@@ -943,6 +1047,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função sem alteração)
     async with DB_SEMAPHORE:
         if update.message:
             try: await update.message.delete()
@@ -1009,6 +1114,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_state = context.user_data.get('state')
         if user_state == 'awaiting_request':
@@ -1025,6 +1131,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text("😕 Desculpe, ocorreu um erro ao salvar seu pedido. Tente novamente mais tarde.")
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função sem alteração)
     if 'state' in context.user_data:
         del context.user_data['state']
         await update.message.reply_text("Operação cancelada.")
@@ -1032,6 +1139,7 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Não há nenhuma operação para cancelar.")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função sem alteração)
     help_text = (
         "Olá! Eu sou o Cine Pipoca, seu assistente de filmes e séries. Veja como me usar:\n\n"
         "🔎 **Para Buscar:**\n"
