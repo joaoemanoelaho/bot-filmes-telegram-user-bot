@@ -100,13 +100,10 @@ async def search_movies(query: str, limit: int = 10) -> list[dict]:
     if not supabase: return []
     try:
         response = await asyncio.to_thread(
-            supabase.table('movies')
-            .select('movie_id, title, year, genre, poster_url')
-            .text_search('title_tsv', query, 
-                         text_search_options={'config': 'portuguese', 'type': 'websearch'})
-            .limit(limit)
-            .limit(limit)
-            .execute
+            supabase.rpc('search_movies_fts', {
+                'query': query,
+                'result_limit': limit
+            }).execute
         )
         return response.data
     except Exception as e:
@@ -305,12 +302,10 @@ async def search_series_by_title(query: str, limit: int = 10) -> list[dict]:
         return []
     try:
         response = await asyncio.to_thread(
-            supabase.table('series')
-            .select('id, tmdb_id, title, description, poster_url, year, genre')
-            .text_search('title_tsv', query, 
-                         text_search_options={'config': 'portuguese', 'type': 'websearch'})
-            .limit(limit)
-            .execute
+            supabase.rpc('search_series_fts', {
+                'query': query,
+                'result_limit': limit
+            }).execute
         )
         return [{'series_id': s['id'], **{k: v for k, v in s.items() if k != 'id'}} for s in response.data]
         
