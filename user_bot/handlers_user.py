@@ -895,7 +895,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query_current_chat=f"season:{season['id']}" 
+                                    switch_inline_query=f"season:{season['id']}" 
                                 )
                             ])
                     keyboard.append([
