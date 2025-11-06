@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.8 - FLUXO INLINE-PARA-URL)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.3 - CORREÇÃO DO ERRO 'reply_markup' NO INLINE)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -38,9 +38,8 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 # =================================================================
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
 # =================================================================
-# --- CORREÇÃO (v5.8): Helper agora cria botões de URL ---
-async def _get_episode_details_message(episode_id: int, bot_username: str) -> tuple[str, InlineKeyboardMarkup]:
-    """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
+# (Esta função não mudou)
+async def _get_episode_details_message(episode_id: int) -> (str, InlineKeyboardMarkup):
     try:
         episode = await db.get_episode_by_id(episode_id) 
         if not episode:
@@ -59,26 +58,19 @@ async def _get_episode_details_message(episode_id: int, bot_username: str) -> tu
             f"🎬 *Temporada:* {season['season_number']}\n"
             f"🎯 *Episódio:* {episode['episode_number']} - {ep_title}\n"
             f"--------------------\n"
-            f"Selecione o áudio (o bot irá te chamar no privado):"
+            f"Selecione o áudio:"
         )
 
         keyboard = []
         audio_row = []
-        
-        # --- LÓGICA DE URL ---
         if episode.get('dubbed_file_id'):
-            payload = f"watch_ep_{episode['id']}_dub"
-            url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
-                InlineKeyboardButton("Dublado 🇧🇷", url=url)
+                InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"series_send_{episode['id']}_dub")
             )
         if episode.get('subtitled_file_id'):
-            payload = f"watch_ep_{episode['id']}_sub"
-            url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
-                InlineKeyboardButton("Legendado 🇺🇸", url=url)
+                InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"series_send_{episode['id']}_sub")
             )
-        # --- FIM DA LÓGICA ---
         
         if audio_row:
              keyboard.append(audio_row)
@@ -94,6 +86,8 @@ async def _get_episode_details_message(episode_id: int, bot_username: str) -> tu
 # =================================================================
 # === HANDLERS PRINCIPAIS (COM PROTEÇÃO) ===
 # =================================================================
+# (Todas as funções de 'start' até 'series_send_' estão iguais à v5.2,
+# pois elas já estavam corretas.)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     async with DB_SEMAPHORE:
@@ -104,141 +98,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             user = update.effective_user
             message_to_reply = update.message
-        
-        # --- Lógica de Payload (Deep Link) ---
         if context.args:
             payload = context.args[0]
-            
-            # 1. Payload de Filme (Já existia)
             if payload.startswith("watch_"):
                 movie_id = payload.split('_')[1]
                 context.args = [movie_id]
                 await watch_command_handler(update, context)
                 return
-            
-            # --- CORREÇÃO (v5.8): Novo Payload para Episódios ---
-            elif payload.startswith("watch_ep_"):
-                try:
-                    parts = payload.split('_')
-                    episode_id = int(parts[2])
-                    audio_type = parts[3]
-                    
-                    await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
-                    
-                    # 2.1. VERIFICAR VIP
-                    if not await db.is_user_vip(user.id):
-                        await message_to_reply.reply_text(
-                            f"Opa, {user.first_name}! 👋\n\n"
-                            "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                            "Clique no botão abaixo para ver as opções.",
-                            parse_mode="Markdown"
-                        )
-                        # Simula um clique no botão "main_vip"
-                        class FakeQuery:
-                            def __init__(self, usr, msg):
-                                self.from_user = usr
-                                self.message = msg
-                                self.data = "main_vip"
-                            async def answer(self): pass
-                            async def edit_message_text(self, *a, **kw): await msg.reply_text(*a, **kw)
-                            async def delete_message(self): pass
-                            async def reply_photo(self, *a, **kw): await msg.reply_photo(*a, **kw)
-                        class FakeUpdate:
-                            def __init__(self, usr, msg):
-                                self.effective_user = usr
-                                self.callback_query = FakeQuery(usr, msg)
-                                self.message = msg
-                        await button_handler(FakeUpdate(user, message_to_reply), context)
-                        return
-
-                    # 2.2. USUÁRIO É VIP: Enviar o vídeo
-                    await message_to_reply.reply_text("⏳ Carregando seu episódio...")
-                    
-                    full_details = await db.get_full_episode_details(episode_id)
-                    if not full_details:
-                        await message_to_reply.reply_text("Erro ao carregar dados do episódio.")
-                        return
-
-                    episode_data = full_details
-                    season_data = full_details.get('seasons')
-                    series_data = season_data.get('series') if season_data else None
-
-                    if not season_data or not series_data:
-                        await message_to_reply.reply_text("Erro ao carregar dados da série.")
-                        return
-                    
-                    file_id_to_send = None
-                    audio_text = "N/A"
-                    if audio_type == 'dub' and episode_data.get('dubbed_file_id'):
-                        file_id_to_send = episode_data['dubbed_file_id']
-                        audio_text = "(Dublado)"
-                    elif audio_type == 'sub' and episode_data.get('subtitled_file_id'):
-                        file_id_to_send = episode_data['subtitled_file_id']
-                        audio_text = "(Legendado)"
-
-                    if file_id_to_send:
-                        bot_username = context.bot.username
-                        series_title = series_data.get('title', 'Série')
-                        season_number = season_data.get('season_number', 0)
-                        series_id_for_related = series_data.get('id', 0)
-                        
-                        video_caption = (
-                            f"📺 *{series_title}*\n"
-                            f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
-                            f"---\n"
-                            f"🍿 Assistido com @{bot_username}"
-                        )
-                        
-                        # Lógica de Navegação (a mesma do 'series_send_' original)
-                        season_id = season_data.get('id')
-                        all_episodes = []
-                        if season_id:
-                            all_episodes, _ = await db.get_episodes_for_season(season_id)
-                            
-                        nav_row = []
-                        current_index = -1
-                        for i, ep in enumerate(all_episodes):
-                            if ep['id'] == episode_id:
-                                current_index = i
-                                break
-                        
-                        if current_index != -1:
-                            if current_index > 0:
-                                prev_episode_id = all_episodes[current_index - 1]['id']
-                                nav_row.append(
-                                    InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
-                                )
-                            if current_index < len(all_episodes) - 1:
-                                next_episode_id = all_episodes[current_index + 1]['id']
-                                nav_row.append(
-                                    InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
-                                )
-
-                        keyboard = [
-                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ], 
-                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title) ]
-                        ]
-                        if nav_row:
-                            keyboard.append(nav_row)
-                        video_reply_markup = InlineKeyboardMarkup(keyboard)
-                        
-                        # Envia o vídeo
-                        await context.bot.send_video(
-                            chat_id=user.id, 
-                            video=file_id_to_send,
-                            caption=video_caption,
-                            parse_mode="Markdown",
-                            reply_markup=video_reply_markup,
-                            protect_content=True
-                        )
-                    else:
-                        await message_to_reply.reply_text("😔 Desculpe, esta versão do áudio não está disponível.")
-
-                except Exception as e:
-                    print(f"Erro ao processar payload watch_ep_: {e}")
-                    await message_to_reply.reply_text("Erro ao carregar episódio.")
-                return
-            # --- FIM DA CORREÇÃO ---
                 
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
         
@@ -278,7 +144,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_id = update.effective_user.id
         if not await db.is_user_vip(user_id):
@@ -304,23 +169,13 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    
-    # --- CORREÇÃO: Lógica para 'FakeQuery' do /start ---
-    if not query:
-        if isinstance(update, object) and hasattr(update, 'callback_query'):
-             query = update.callback_query
-        else:
-             print("[ERRO] button_handler recebeu um update inválido.")
-             return
-    # ----------------------------------------------------
-    
     callback_data = query.data
     user_id = query.from_user.id
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
 
     # --- LÓGICA PARA ENVIAR O FILME ---
     if callback_data.startswith("play_"):
-        # (Função sem alteração)
+        
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -385,7 +240,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # --- LÓGICA DE RELACIONADOS ---
     elif callback_data.startswith("related_"):
-        # (Função sem alteração)
+        
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -435,7 +290,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # --- LÓGICA DE PEDIDO ---
     elif callback_data == "main_request":
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -466,7 +320,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # --- LÓGICA TOP FILMES ---
     elif callback_data == "main_top":
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -499,7 +352,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
             
     elif callback_data.startswith("top_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             period_days = int(callback_data.split('_')[1])
@@ -524,7 +376,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
             
     elif callback_data.startswith("show_card_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             movie_id = int(callback_data.split('_')[2])
@@ -572,7 +423,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     # --- LÓGICA DE PAGAMENTO VIP ---
     elif callback_data == "main_vip":
-        # (Função sem alteração)
+        
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
         cooldown = 60 
@@ -627,14 +478,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 keyboard = [[InlineKeyboardButton("✅ Já Paguei", callback_data=f"check_payment_{payment_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                # --- Correção para FakeQuery ---
-                if hasattr(query, 'delete_message'):
-                    await query.delete_message()
-                elif hasattr(query, 'message') and hasattr(query.message, 'delete'):
-                     await query.message.delete()
-                # -------------------------------
-                
+                await query.delete_message()
                 await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
                     parse_mode="Markdown", reply_markup=reply_markup
@@ -643,7 +487,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
 
     elif callback_data.startswith("check_payment_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             payment_id = callback_data.split('_')[2]
             now = time.time()
@@ -676,7 +519,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
             
     # --- v3.2: LÓGICA DE NAVEGAÇÃO DE EPISÓDIOS ---
-    # --- CORREÇÃO (v5.8): Esta lógica agora usa o helper de URL ---
     elif callback_data.startswith("ep_nav_"):
         async with DB_SEMAPHORE:
             try:
@@ -686,9 +528,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             new_episode_id = int(callback_data.split('_')[2])
             
-            # Pega o username do bot para construir as URLs
-            bot_username = context.bot.username
-            message_text, reply_markup = await _get_episode_details_message(new_episode_id, bot_username)
+            message_text, reply_markup = await _get_episode_details_message(new_episode_id)
             
             try:
                 await query.delete_message()
@@ -709,15 +549,163 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     parse_mode="Markdown"
                 )
             
-    # --- CORREÇÃO (v5.8): Esta lógica inteira não é mais necessária ---
-    # Os botões de áudio agora são URLs e tratados pelo /start
-    # ---
-    # elif callback_data.startswith("series_send_"):
-    #    ... (CÓDIGO REMOVIDO) ...
-    # ---
+    # --- LÓGICA FINAL (v3.2) - Enviar o vídeo da série ---
+    elif callback_data.startswith("series_send_"):
+
+        now = time.time()
+        last_request = context.user_data.get('last_action_time', 0)
+        cooldown = 10 
+        
+        if now - last_request < cooldown:
+            await query.answer(
+                text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s antes de outra ação.",
+                show_alert=True
+            )
+            return
+
+        async with DB_SEMAPHORE:
+            try:
+                await query.answer() 
+            except Exception as e:
+                print(f"Ignorando erro de timeout no query.answer(): {e}")
+
+            user_id = query.from_user.id
+            if not await db.is_user_vip(user_id):
+                keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                message_text = (
+                    f"Opa, {query.from_user.first_name}! 👋\n\n"
+                    "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                    "✅ Libere **TODAS** as séries do catálogo.\n"
+                    "✅ Assista filmes e séries sem interrupções.\n"
+                    "✅ Ajude a manter o bot online com novos lançamentos!"
+                )
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=message_text,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+                return 
+                
+            parts = callback_data.split('_')
+            episode_id = int(parts[2])
+            audio_type = parts[3]
+            
+            full_details = await db.get_full_episode_details(episode_id)
+            
+            if not full_details:
+                print(f"Erro: get_full_episode_details não encontrou dados para ep {episode_id}")
+                await context.bot.send_message(chat_id=user_id, text="Erro ao carregar dados do episódio.")
+                return
+
+            episode_data = full_details
+            season_data = full_details.get('seasons')
+            series_data = season_data.get('series') if season_data else None
+
+            if not season_data or not series_data:
+                print(f"Erro: Dados de temporada ou série ausentes no JOIN para ep {episode_id}")
+                await context.bot.send_message(chat_id=user_id, text="Erro ao carregar dados da série.")
+                return
+
+            series_title = series_data.get('title', 'Série')
+            season_number = season_data.get('season_number', 0)
+            series_id_for_related = series_data.get('id', 0)
+                
+            file_id_to_send = None
+            audio_text = "N/A"
+            if audio_type == 'dub' and episode_data.get('dubbed_file_id'):
+                file_id_to_send = episode_data['dubbed_file_id']
+                audio_text = "(Dublado)"
+            elif audio_type == 'sub' and episode_data.get('subtitled_file_id'):
+                file_id_to_send = episode_data['subtitled_file_id']
+                audio_text = "(Legendado)"
+            
+            if file_id_to_send:
+                bot_username = context.bot.username
+                
+                video_caption = (
+                    f"📺 *{series_title}*\n"
+                    f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
+                    f"---\n"
+                    f"🍿 Assistido com @{bot_username}"
+                )
+                
+                season_id = season_data.get('id')
+                
+                all_episodes = []
+                if season_id:
+                    all_episodes, _ = await db.get_episodes_for_season(season_id)
+                    
+                nav_row = []
+                current_index = -1
+                for i, ep in enumerate(all_episodes):
+                    if ep['id'] == episode_id:
+                        current_index = i
+                        break
+                
+                if current_index != -1:
+                    if current_index > 0:
+                        prev_episode_id = all_episodes[current_index - 1]['id']
+                        nav_row.append(
+                            InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
+                        )
+                    if current_index < len(all_episodes) - 1:
+                        next_episode_id = all_episodes[current_index + 1]['id']
+                        nav_row.append(
+                            InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
+                        )
+
+                keyboard = [
+                    [ 
+                        InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series")
+                    ], [
+                        InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title)
+                    ]
+                ]
+                
+                if nav_row:
+                    keyboard.append(nav_row)
+
+                video_reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    await query.delete_message()
+                except Exception as e:
+                    print(f"Não foi possível deletar a msg de áudio: {e}")
+
+                # --- 3. INÍCIO DA LÓGICA DE RETENTATIVA ---
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await context.bot.send_video(
+                            chat_id=query.from_user.id, 
+                            video=file_id_to_send,
+                            caption=video_caption,
+                            parse_mode="Markdown",
+                            reply_markup=video_reply_markup,
+                            protect_content=True
+                        )
+                        # Se funcionou, sai do loop
+                        break
+                    except NetworkError as e:
+                        print(f"Erro de rede ao enviar vídeo de série (tentativa {attempt + 1}/{max_retries}): {e}")
+                        if attempt + 1 == max_retries:
+                            print("Falha ao enviar vídeo de série após 3 tentativas.")
+                            return # Desiste da função
+                        await asyncio.sleep(2) # Espera 2s antes de tentar de novo
+                # --- FIM DA LÓGICA DE RETENTATIVA ---
+                
+                context.user_data['last_action_time'] = time.time()
+            else:
+                 await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text="😔 Desculpe, esta versão do áudio não está disponível."
+                )
+    # --- FIM DO 'series_send_' ---
 
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.8) ===
+# === INLINE QUERY HANDLER (COM CORREÇÃO v5.3) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
@@ -728,7 +716,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         async with DB_SEMAPHORE:
             query_text = update.inline_query.query
-            bot_username = context.bot.username # Pega o username do bot
             
             #
             # === ROTA 1: BUSCA DE EPISÓDIOS ===
@@ -743,13 +730,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 title="🍿 Acesso Pipoca Premium Necessário!",
                                 description="Clique aqui para liberar todas as séries do catálogo.",
                                 thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
-                                # --- CORREÇÃO (v5.8): Botão de premium é URL ---
-                                # (O callback_data não funciona bem se a msg for enviada em outro chat)
                                 reply_markup=InlineKeyboardMarkup([[
-                                        InlineKeyboardButton(
-                                            "Quero meu Acesso Premium! 🚀", 
-                                            url=f"https://t.me/{bot_username}?start=premium" # Usar payload 'premium'
-                                        ) 
+                                        InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")
                                     ]]),
                                 input_message_content=InputTextMessageContent(
                                     message_text=(
@@ -757,7 +739,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
                                         "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
                                     ),
-                                    parse_mode="Markdown",                                     
+                                    parse_mode="Markdown",                                    
                                 )
                             )
                         )
@@ -783,21 +765,40 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             series_title = series.get('title', 'Série') if series else 'Série'
 
                             for i, ep in enumerate(episodes):
-                                # --- CORREÇÃO (v5.8): Usar o helper de URL ---
                                 ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
-                                message_text, reply_markup = await _get_episode_details_message(ep['id'], bot_username)
+                                message_text = (
+                                    f"📽️ *{series_title}*\n"
+                                    f"🎬 *Temporada:* {season['season_number']}\n"
+                                    f"🎯 *Episódio:* {ep['episode_number']} - {ep_title}\n"
+                                    f"--------------------\n"
+                                    f"Selecione o áudio:"
+                                )
+                                keyboard = []
+                                audio_row = []
+                                if ep.get('dubbed_file_id'):
+                                    audio_row.append(
+                                        InlineKeyboardButton("Dublado 🇧🇷", callback_data=f"series_send_{ep['id']}_dub")
+                                    )
+                                if ep.get('subtitled_file_id'):
+                                    audio_row.append(
+                                        InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"series_send_{ep['id']}_sub")
+                                    )
+                                if audio_row:
+                                    keyboard.append(audio_row)
                                 
-                                if reply_markup: # Se tiver botões (dub ou sub)
+                                if audio_row:
+                                    reply_markup = InlineKeyboardMarkup(keyboard)
                                     results.append(
                                         InlineQueryResultArticle(
                                             id=f"ep_{ep['id']}",
                                             title=f"Episódio : {ep['episode_number']}",
                                             description=f"🎬 {series_title} | {ep_title}",
                                             thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
-                                            reply_markup=reply_markup,
+                                            reply_markup=reply_markup, # <-- LUGAR CORRETO
                                             input_message_content=InputTextMessageContent(
                                                 message_text=message_text,
                                                 parse_mode="Markdown"
+                                                # (NÃO PODE TER reply_markup aqui)
                                             )
                                         )
                                     )
@@ -805,6 +806,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             is_personal = True
                 
                 except Exception as e:
+                    # Este é o log que você viu
                     print(f"❌ Erro na busca inline de episódios: {e}") 
                     results = [InlineQueryResultArticle(
                         id="error_eps",
@@ -890,18 +892,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     keyboard = []
                     if seasons:
                         for season in seasons:
-                            #
-                            # --- CORREÇÃO (v5.8): Voltamos ao '..._current_chat' ---
-                            #
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query_current_chat=f"season:{season['id']}" # <-- AQUI!
+                                    switch_inline_query=f"season:{season['id']}" 
                                 )
                             ])
-                            #
-                            # --- FIM DA CORREÇÃO ---
-                            #
                     keyboard.append([
                         InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])
                     ])
@@ -947,7 +943,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
     async with DB_SEMAPHORE:
         if update.message:
             try: await update.message.delete()
@@ -1014,7 +1009,6 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.send_message(chat_id=update.effective_chat.id, text="Filme não encontrado ou sem pôster disponível.")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_state = context.user_data.get('state')
         if user_state == 'awaiting_request':
@@ -1031,7 +1025,6 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text("😕 Desculpe, ocorreu um erro ao salvar seu pedido. Tente novamente mais tarde.")
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
     if 'state' in context.user_data:
         del context.user_data['state']
         await update.message.reply_text("Operação cancelada.")
@@ -1039,7 +1032,6 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Não há nenhuma operação para cancelar.")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função sem alteração)
     help_text = (
         "Olá! Eu sou o Cine Pipoca, seu assistente de filmes e séries. Veja como me usar:\n\n"
         "🔎 **Para Buscar:**\n"
@@ -1062,5 +1054,4 @@ watch_handler = CommandHandler("watch", watch_command_handler)
 text_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler)
 cancel_command_handler = CommandHandler("cancelar", cancel_handler)
 help_command_handler = CommandHandler("help", help_handler)
-request_command_handler = CommandHandler("pedir", request_command_handler
-                                         )
+request_command_handler = CommandHandler("pedir", request_command_handler)
