@@ -430,3 +430,36 @@ async def get_full_episode_details(episode_id: int) -> dict | None:
         print(f"Erro ao buscar get_full_episode_details: {e}")
         return None
     
+#
+# --- CORREÇÃO (v5.13): Funções rápidas para navegação de episódios ---
+#
+async def get_neighbor_episode(season_id: int, current_episode_number: int, direction: str) -> dict | None:
+    """Busca o episódio anterior ou próximo em uma temporada."""
+    if not supabase: return None
+    
+    try:
+        query = supabase.table('episodes').select('id')
+        query = query.eq('season_id', season_id)
+        
+        if direction == 'next':
+            # Busca o primeiro ep com número MAIOR que o atual
+            query = query.gt('episode_number', current_episode_number)
+            query = query.order('episode_number', desc=False) # Ordem crescente
+        else: # direction == 'previous'
+            # Busca o primeiro ep com número MENOR que o atual
+            query = query.lt('episode_number', current_episode_number)
+            query = query.order('episode_number', desc=True) # Ordem decrescente
+            
+        response = await asyncio.to_thread(
+            query.limit(1).single().execute
+        )
+        
+        return response.data if response.data else None
+        
+    except Exception as e:
+        # 'single()' falha se não encontrar nada, o que é esperado
+        if "Missing data" in str(e):
+            return None
+        print(f"Erro ao buscar neighbor_episode (direction={direction}): {e}")
+        return None
+# --- FIM DA CORREÇÃO ---

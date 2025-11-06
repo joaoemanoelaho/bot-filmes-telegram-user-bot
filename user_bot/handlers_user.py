@@ -101,7 +101,7 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
 # =================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função da v5.10 - Sem alterações)
+    # (Função da v5.10, mas com a lógica de navegação otimizada)
     async with DB_SEMAPHORE:
         is_query = update.callback_query is not None
         if is_query:
@@ -201,27 +201,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"🍿 Assistido com @{bot_username}"
                         )
                         
+                        # --- CORREÇÃO (v5.13): Lógica de navegação otimizada ---
                         season_id = season_data.get('id')
-                        all_episodes, _ = await db.get_episodes_for_season(season_id)
+                        current_ep_num = episode_data.get('episode_number', 0)
+                        
+                        # Faz 2 buscas rápidas em paralelo, em vez de 1 lenta
+                        prev_ep, next_ep = await asyncio.gather(
+                            db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
+                            db.get_neighbor_episode(season_id, current_ep_num, 'next')
+                        )
                             
                         nav_row = []
-                        current_index = -1
-                        for i, ep in enumerate(all_episodes):
-                            if ep['id'] == episode_id:
-                                current_index = i
-                                break
-                        
-                        if current_index != -1:
-                            if current_index > 0:
-                                prev_episode_id = all_episodes[current_index - 1]['id']
-                                nav_row.append(
-                                    InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_episode_id}")
-                                )
-                            if current_index < len(all_episodes) - 1:
-                                next_episode_id = all_episodes[current_index + 1]['id']
-                                nav_row.append(
-                                    InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_episode_id}")
-                                )
+                        if prev_ep:
+                            nav_row.append(
+                                InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}")
+                            )
+                        if next_ep:
+                            nav_row.append(
+                                InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_ep['id']}")
+                            )
+                        # --- FIM DA CORREÇÃO ---
 
                         keyboard = [
                             [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ], 
@@ -244,6 +243,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
                 except Exception as e:
                     print(f"Erro ao processar payload watch_ep_: {e}")
+                    import traceback
+                    traceback.print_exc() # Adiciona mais detalhes do erro
                     await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.") 
                 return
 
@@ -287,7 +288,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await message_to_reply.delete()
         else:
             await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
-
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
@@ -715,7 +715,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     results = []
     cache_time = 30 # Padrão
     is_personal = False
-    next_offset = None # <--- CORREÇÃO: Inicializa o next_offset
+    next_offset = None # Inicializa o next_offset
     
     try:
         async with DB_SEMAPHORE:
@@ -723,6 +723,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             bot_username = context.bot.username
             
             # --- CORREÇÃO (v5.13): Lê o offset atual ---
+            # O offset é uma string, convertemos para int.
+            # Se for vazio (''), usamos 0.
             current_offset = int(update.inline_query.offset) if update.inline_query.offset else 0
             
             #
@@ -735,7 +737,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     season_id = int(query_text.split(':')[1])
                     
                     # --- CORREÇÃO (v5.13): Define o limite e chama com offset ---
-                    page_limit = 48 # Deixa 2 espaços para botões de navegação
+                    # Usamos 48 para deixar espaço para os botões de nav
+                    page_limit = 48 
+                    
+                    # Otimização (v5.11): Chama a função otimizada
                     episodes, season = await db.get_episodes_for_season(
                         season_id, 
                         limit=page_limit, 
@@ -824,7 +829,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         
                         # --- CORREÇÃO (v5.13): Define o next_offset ---
                         if len(episodes) == page_limit:
-                            # Se recebemos o limite total, 
+                            # Se a busca retornou o NÚMERO MÁXIMO (48),
                             # assumimos que há uma próxima página.
                             next_offset = str(current_offset + page_limit)
                         # --- FIM DA CORREÇÃO ---
@@ -842,7 +847,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
             #
             # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
-            # (Sem alterações, mas também usará o next_offset=None)
             #
             elif not query_text:
                 results = [
@@ -956,7 +960,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 is_personal=is_personal,
                 next_offset=next_offset # <-- A MÁGICA DA PAGINAÇÃO
             )
-            # --- FIM DA CORREÇÃO ---
             break 
         except NetworkError as e:
             print(f"Erro de rede ao enviar inline_query (tentativa {attempt + 1}/{max_retries}): {e}")
