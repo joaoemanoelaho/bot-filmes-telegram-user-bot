@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.10 - FLUXO AUTO-LIMPEZA)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.11 - OTIMIZAÇÃO N+1)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -38,19 +38,22 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 # =================================================================
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
 # =================================================================
-# --- CORREÇÃO (v5.10): Helper agora aceita um ID para deletar ---
+# --- CORREÇÃO (v5.11): Helper agora usa get_full_episode_details ---
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
-        episode = await db.get_episode_by_id(episode_id) 
-        if not episode:
+        # OTIMIZAÇÃO: 3 chamadas ao DB -> 1 chamada
+        details = await db.get_full_episode_details(episode_id) 
+        if not details:
             return ("Erro: Episódio não encontrado.", None)
-            
-        all_episodes, season = await db.get_episodes_for_season(episode['season_id'])
-        if not season:
-             return ("Erro: Temporada não encontrada.", None)
+        
+        episode = details
+        season = details.get('seasons')
+        series = season.get('series') if season else None
 
-        series = await db.get_series_by_id(season['series_id'])
+        if not season or not series:
+             return ("Erro: Dados da temporada ou série ausentes.", None)
+
         series_title = series.get('title', 'Série')
         ep_title = episode.get('title', f"Episódio {episode['episode_number']}")
 
@@ -65,11 +68,10 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
         keyboard = []
         audio_row = []
         
-        # --- LÓGICA DE URL (com delete_msg_id) ---
         if episode.get('dubbed_file_id'):
             payload = f"watch_ep_{episode['id']}_dub"
             if delete_msg_id:
-                payload += f"_del_{delete_msg_id}" # Adiciona o ID da msg para deletar
+                payload += f"_del_{delete_msg_id}"
             url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
                 InlineKeyboardButton("Dublado 🇧🇷", url=url)
@@ -77,12 +79,11 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
         if episode.get('subtitled_file_id'):
             payload = f"watch_ep_{episode['id']}_sub"
             if delete_msg_id:
-                payload += f"_del_{delete_msg_id}" # Adiciona o ID da msg para deletar
+                payload += f"_del_{delete_msg_id}"
             url = f"https://t.me/{bot_username}?start={payload}"
             audio_row.append(
                 InlineKeyboardButton("Legendado 🇺🇸", url=url)
             )
-        # --- FIM DA LÓGICA ---
         
         if audio_row:
              keyboard.append(audio_row)
@@ -100,6 +101,7 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
 # =================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função da v5.10 - Sem alterações)
     async with DB_SEMAPHORE:
         is_query = update.callback_query is not None
         if is_query:
@@ -109,21 +111,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             user = update.effective_user
             message_to_reply = update.message
         
-        # --- Lógica de Payload (Deep Link) ---
         if context.args:
             payload = context.args[0]
             
-            # --- CORREÇÃO (v5.10): Deleta a msg /start do usuário ---
             if not is_query:
                 try:
                     await message_to_reply.delete()
                 except Exception as e:
                     print(f"[WARN] Não foi possível deletar a msg /start do usuário: {e}")
             
-            # 1. Payload de Episódio (Mais específico, vem primeiro)
             if payload.startswith("watch_ep_"):
                 try:
-                    # --- CORREÇÃO (v5.10): Parse do novo payload ---
                     parts = payload.split('_')
                     episode_id = int(parts[2])
                     audio_type = parts[3]
@@ -131,19 +129,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     if len(parts) > 5 and parts[4] == 'del':
                         msg_to_delete_id = int(parts[5])
                     
-                    # Deleta a msg de áudio (se veio da navegação)
                     if msg_to_delete_id:
                         try:
                             await context.bot.delete_message(chat_id=user.id, message_id=msg_to_delete_id)
                         except Exception as e:
                             print(f"[WARN] Não foi possível deletar msg de áudio {msg_to_delete_id}: {e}")
-                    # --- FIM DA CORREÇÃO ---
 
                     await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
                     
-                    # 1.1. VERIFICAR VIP
                     if not await db.is_user_vip(user.id):
-                        # (Envia msg de Premium)
                         await context.bot.send_message(
                             chat_id=user.id,
                             text=(
@@ -153,11 +147,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             ),
                             parse_mode="Markdown"
                         )
-                        # Simula um clique no botão "main_vip"
                         class FakeQuery:
                             def __init__(self, usr, msg):
                                 self.from_user = usr
-                                self.message = msg # Usa a msg (já deletada) como base, mas não importa
+                                self.message = msg 
                                 self.data = "main_vip"
                             async def answer(self): pass
                             async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
@@ -171,10 +164,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         await button_handler(FakeUpdate(user, message_to_reply), context)
                         return
 
-                    # 1.2. USUÁRIO É VIP: Enviar o vídeo
-                    # --- CORREÇÃO (v5.10): Deleta a msg "Carregando" ---
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
                     
+                    # OTIMIZAÇÃO: Esta é a única chamada ao DB (rápido)
                     full_details = await db.get_full_episode_details(episode_id)
                     if not full_details:
                         await status_msg.edit_text("Erro ao carregar dados do episódio.")
@@ -211,9 +203,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                         
                         season_id = season_data.get('id')
-                        all_episodes = []
-                        if season_id:
-                            all_episodes, _ = await db.get_episodes_for_season(season_id)
+                        # OTIMIZAÇÃO: Esta é a segunda (e lenta) chamada ao DB.
+                        # Mas é aceitável, pois é 1 chamada, não 12.
+                        all_episodes, _ = await db.get_episodes_for_season(season_id)
                             
                         nav_row = []
                         current_index = -1
@@ -250,25 +242,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             reply_markup=video_reply_markup,
                             protect_content=True
                         )
-                        await status_msg.delete() # Deleta o "Carregando..."
+                        await status_msg.delete() 
                     else:
                         await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
-                    # --- FIM DA CORREÇÃO ---
                 except Exception as e:
                     print(f"Erro ao processar payload watch_ep_: {e}")
-                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.") # Envia nova msg
+                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.") 
                 return
 
-            # 2. Payload de Filme (Mais geral, vem depois)
             elif payload.startswith("watch_"):
-                # O /start já foi deletado lá em cima
-                context.args = [payload.split('_')[1]] # Recria o context.args
-                await watch_command_handler(update, context, message_deletada=True) # Passa um flag
+                context.args = [payload.split('_')[1]] 
+                await watch_command_handler(update, context, message_deletada=True) 
                 return
                 
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
         
-        # (Lógica do menu principal, sem alteração)
         keyboard = [
             [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),],
             [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
@@ -330,6 +318,7 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # (Função da v5.10 - Sem alterações)
     query = update.callback_query
     
     if not query:
@@ -344,7 +333,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
 
     if callback_data.startswith("play_"):
-        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -408,7 +396,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
 
     elif callback_data.startswith("related_"):
-        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10 
@@ -457,7 +444,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             context.user_data['last_action_time'] = time.time()
 
     elif callback_data == "main_request":
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -487,7 +473,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
     
     elif callback_data == "main_top":
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
@@ -520,7 +505,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
             
     elif callback_data.startswith("top_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             period_days = int(callback_data.split('_')[1])
@@ -545,7 +529,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
             
     elif callback_data.startswith("show_card_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             await query.answer()
             movie_id = int(callback_data.split('_')[2])
@@ -591,7 +574,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start(update, context)
         
     elif callback_data == "main_vip":
-        # (Função sem alteração)
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
         cooldown = 60 
@@ -607,7 +589,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.answer()
             if await db.is_user_vip(user_id):
                 try: await query.edit_message_text("✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
-                except Exception: pass # Pode falhar se for um 'fake query' do /start
+                except Exception: pass
                 return
                 
             user_details = await db.get_user_details(user_id)
@@ -661,7 +643,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
 
     elif callback_data.startswith("check_payment_"):
-        # (Função sem alteração)
         async with DB_SEMAPHORE:
             payment_id = callback_data.split('_')[2]
             now = time.time()
@@ -693,8 +674,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     show_alert=True
                 )
             
-    # --- CORREÇÃO (v5.10): Lógica de Navegação ---
     elif callback_data.startswith("ep_nav_"):
+        # (Função da v5.10 - Sem alterações)
         async with DB_SEMAPHORE:
             try:
                 await query.answer() 
@@ -708,18 +689,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except Exception as e:
                 print(f"Erro ao deletar msg de vídeo na navegação: {e}")
 
-            # 1. Envia msg placeholder para obter o ID
             placeholder_msg = await context.bot.send_message(chat_id=user_id, text="Carregando opções...")
             
-            # 2. Cria os botões de URL, passando o ID da msg placeholder
             bot_username = context.bot.username
             message_text, reply_markup = await _get_episode_details_message(
                 new_episode_id, 
                 bot_username, 
-                delete_msg_id=placeholder_msg.message_id # <--- A MÁGICA
+                delete_msg_id=placeholder_msg.message_id 
             )
             
-            # 3. Edita a msg placeholder com o conteúdo real
             if reply_markup:
                 await placeholder_msg.edit_text(
                     text=message_text,
@@ -727,15 +705,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     parse_mode="Markdown"
                 )
             else:
-                await placeholder_msg.edit_text(message_text) # Mostra erro
+                await placeholder_msg.edit_text(message_text)
             
-    # Lógica 'series_send_' foi removida
-
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.9) ===
+# === INLINE QUERY HANDLER (COM CORREÇÃO v5.11) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função da v5.9 - Sem alterações)
+    
     results = []
     cache_time = 30 # Padrão
     is_personal = False
@@ -745,10 +721,19 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             query_text = update.inline_query.query
             bot_username = context.bot.username
             
+            #
+            # === ROTA 1: BUSCA DE EPISÓDIOS ===
+            #
             if query_text.startswith("season:"):
                 try:
                     user_id = update.inline_query.from_user.id
-                    if not await db.is_user_vip(user_id):
+                    
+                    # --- Otimização: 3 chamadas ao DB de uma vez ---
+                    is_vip = await db.is_user_vip(user_id)
+                    season_id = int(query_text.split(':')[1])
+                    episodes, season = await db.get_episodes_for_season(season_id)
+                    
+                    if not is_vip:
                         results.append(
                             InlineQueryResultArticle(
                                 id="vip_required_series",
@@ -774,44 +759,63 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         cache_time = 5
                         is_personal = True
                 
-                    else: # Usuário é VIP, busca os episódios
-                        season_id = int(query_text.split(':')[1])
-                        episodes, season = await db.get_episodes_for_season(season_id)
-                        
-                        if not episodes:
-                            results.append(InlineQueryResultArticle(
-                                id="no_eps_found",
-                                title="Nenhum episódio encontrado",
-                                description="Esta temporada parece não ter episódios cadastrados.",
-                                input_message_content=InputTextMessageContent("Nenhum episódio encontrado.")
-                            ))
-                            cache_time = 10
+                    elif not episodes:
+                        results.append(InlineQueryResultArticle(
+                            id="no_eps_found",
+                            title="Nenhum episódio encontrado",
+                            description="Esta temporada parece não ter episódios cadastrados.",
+                            input_message_content=InputTextMessageContent("Nenhum episódio encontrado.")
+                        ))
+                        cache_time = 10
                             
-                        else:
-                            series = await db.get_series_by_id(season['series_id'])
-                            series_title = series.get('title', 'Série') if series else 'Série'
-
-                            for i, ep in enumerate(episodes):
-                                ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
-                                # Passa 'delete_msg_id=None' (implícito), que é o correto para a busca inline
-                                message_text, reply_markup = await _get_episode_details_message(ep['id'], bot_username) 
-                                
-                                if reply_markup: 
-                                    results.append(
-                                        InlineQueryResultArticle(
-                                            id=f"ep_{ep['id']}",
-                                            title=f"Episódio : {ep['episode_number']}",
-                                            description=f"🎬 {series_title} | {ep_title}",
-                                            thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
-                                            reply_markup=reply_markup,
-                                            input_message_content=InputTextMessageContent(
-                                                message_text=message_text,
-                                                parse_mode="Markdown"
-                                            )
+                    else: # Usuário é VIP e existem episódios
+                        
+                        # --- Otimização: 3ª (e última) chamada ao DB ---
+                        series = await db.get_series_by_id(season['series_id'])
+                        series_title = series.get('title', 'Série') if series else 'Série'
+                        
+                        # --- CORREÇÃO (v5.11): Loop Otimizado (Sem N+1) ---
+                        for i, ep in enumerate(episodes):
+                            ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
+                            
+                            # Lógica de criação de botões (rápida, sem DB)
+                            message_text = (
+                                f"📽️ *{series_title}*\n"
+                                f"🎬 *Temporada:* {season['season_number']}\n"
+                                f"🎯 *Episódio:* {ep['episode_number']} - {ep_title}\n"
+                                f"--------------------\n"
+                                f"Selecione o áudio (o bot irá te chamar no privado):"
+                            )
+                            keyboard = []
+                            audio_row = []
+                            if ep.get('dubbed_file_id'):
+                                payload = f"watch_ep_{ep['id']}_dub"
+                                url = f"https://t.me/{bot_username}?start={payload}"
+                                audio_row.append(InlineKeyboardButton("Dublado 🇧🇷", url=url))
+                            if ep.get('subtitled_file_id'):
+                                payload = f"watch_ep_{ep['id']}_sub"
+                                url = f"https://t.me/{bot_username}?start={payload}"
+                                audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=url))
+                            
+                            # Só adiciona o episódio se ele tiver um link (dub ou sub)
+                            if audio_row:
+                                reply_markup = InlineKeyboardMarkup([audio_row])
+                                results.append(
+                                    InlineQueryResultArticle(
+                                        id=f"ep_{ep['id']}",
+                                        title=f"Episódio : {ep['episode_number']}",
+                                        description=f"🎬 {series_title} | {ep_title}",
+                                        thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
+                                        reply_markup=reply_markup,
+                                        input_message_content=InputTextMessageContent(
+                                            message_text=message_text,
+                                            parse_mode="Markdown"
                                         )
                                     )
-                            cache_time = 10
-                            is_personal = True
+                                )
+                        # --- FIM DA CORREÇÃO ---
+                        cache_time = 10
+                        is_personal = True
                 
                 except Exception as e:
                     print(f"❌ Erro na busca inline de episódios: {e}") 
@@ -821,6 +825,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         input_message_content=InputTextMessageContent("Ocorreu um erro ao processar sua solicitação.")
                     )]
 
+            #
+            # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
+            #
             elif not query_text:
                 results = [
                     InlineQueryResultArticle(
@@ -933,6 +940,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             break 
         except NetworkError as e:
+            # Não imprime mais o traceback inteiro, só o aviso
             print(f"Erro de rede ao enviar inline_query (tentativa {attempt + 1}/{max_retries}): {e}")
             if attempt + 1 == max_retries:
                 print("Falha ao enviar inline_query após 3 tentativas.")
@@ -940,10 +948,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await asyncio.sleep(1) 
 
 
-# --- CORREÇÃO (v5.10): Modificamos o watch_command_handler ---
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
+    # (Função da v5.10 - Sem alterações)
     async with DB_SEMAPHORE:
-        # Se a msg /start JÁ FOI DELETADA, não tenta deletar de novo.
         if update.message and not message_deletada:
             try: await update.message.delete()
             except Exception: pass
@@ -952,7 +959,6 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         movie_id = context.args[0]
         user_id = update.effective_user.id
         
-        # Como a msg /start foi deletada, temos que enviar novas mensagens
         chat_id_to_reply = update.effective_chat.id
         
         if not await db.is_user_vip(user_id):
