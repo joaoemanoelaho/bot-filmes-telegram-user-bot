@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.11 - OTIMIZAÇÃO N+1)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.12 - OTIMIZAÇÃO N+1 e LIMITE DE 50)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, 
@@ -38,7 +38,7 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 # =================================================================
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
 # =================================================================
-# --- CORREÇÃO (v5.11): Helper agora usa get_full_episode_details ---
+# (Helper da v5.11 - Otimizado)
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
@@ -166,7 +166,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
                     
-                    # OTIMIZAÇÃO: Esta é a única chamada ao DB (rápido)
                     full_details = await db.get_full_episode_details(episode_id)
                     if not full_details:
                         await status_msg.edit_text("Erro ao carregar dados do episódio.")
@@ -203,8 +202,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         )
                         
                         season_id = season_data.get('id')
-                        # OTIMIZAÇÃO: Esta é a segunda (e lenta) chamada ao DB.
-                        # Mas é aceitável, pois é 1 chamada, não 12.
                         all_episodes, _ = await db.get_episodes_for_season(season_id)
                             
                         nav_row = []
@@ -685,7 +682,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             new_episode_id = int(callback_data.split('_')[2])
             
             try:
-                await query.delete_message() # Deleta o vídeo antigo
+                await query.delete_message() 
             except Exception as e:
                 print(f"Erro ao deletar msg de vídeo na navegação: {e}")
 
@@ -708,7 +705,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await placeholder_msg.edit_text(message_text)
             
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.11) ===
+# === INLINE QUERY HANDLER (COM CORREÇÃO v5.12) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
@@ -728,7 +725,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 try:
                     user_id = update.inline_query.from_user.id
                     
-                    # --- Otimização: 3 chamadas ao DB de uma vez ---
+                    # --- OTIMIZAÇÃO (v5.11): 3 chamadas ao DB de uma vez ---
                     is_vip = await db.is_user_vip(user_id)
                     season_id = int(query_text.split(':')[1])
                     episodes, season = await db.get_episodes_for_season(season_id)
@@ -770,15 +767,19 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             
                     else: # Usuário é VIP e existem episódios
                         
-                        # --- Otimização: 3ª (e última) chamada ao DB ---
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
                         
-                        # --- CORREÇÃO (v5.11): Loop Otimizado (Sem N+1) ---
                         for i, ep in enumerate(episodes):
+                            
+                            # --- CORREÇÃO (v5.12): Limite de 50 resultados ---
+                            # O limite é 50, mas usamos 49 para segurança.
+                            if len(results) >= 49:
+                                break 
+                            # --- FIM DA CORREÇÃO ---
+
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
                             
-                            # Lógica de criação de botões (rápida, sem DB)
                             message_text = (
                                 f"📽️ *{series_title}*\n"
                                 f"🎬 *Temporada:* {season['season_number']}\n"
@@ -797,7 +798,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 url = f"https://t.me/{bot_username}?start={payload}"
                                 audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=url))
                             
-                            # Só adiciona o episódio se ele tiver um link (dub ou sub)
                             if audio_row:
                                 reply_markup = InlineKeyboardMarkup([audio_row])
                                 results.append(
@@ -813,7 +813,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         )
                                     )
                                 )
-                        # --- FIM DA CORREÇÃO ---
                         cache_time = 10
                         is_personal = True
                 
@@ -940,7 +939,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             break 
         except NetworkError as e:
-            # Não imprime mais o traceback inteiro, só o aviso
             print(f"Erro de rede ao enviar inline_query (tentativa {attempt + 1}/{max_retries}): {e}")
             if attempt + 1 == max_retries:
                 print("Falha ao enviar inline_query após 3 tentativas.")
