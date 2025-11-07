@@ -9,7 +9,7 @@ from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
 # --- INÍCIO DA MUDANÇA ---
-# Este é o import correto que você encontrou!
+# Este é o import correto, como você descobriu!
 from ptbcontrib.aiohttp_request import AiohttpRequest
 # --- FIM DA MUDANÇA ---
 
@@ -43,7 +43,7 @@ async def startup():
     # ---------------------
     
     try:
-        # --- INÍCIO DA MUDANÇA: TROCANDO PARA AIOHTTP ---
+        # --- INÍCIO DA MUDANÇA: TROCANDO PARA AIOHTTP (MÉTODO CORRETO) ---
 
         # 2. Criamos o objeto de request com os timeouts
         # Usamos os mesmos timeouts longos que já tínhamos
@@ -55,11 +55,12 @@ async def startup():
             connection_pool_size=256 # Como no exemplo que você achou
         )
 
-        # 3. Construímos o app passando o .request()
-        # A v20+ da PTB usa o mesmo request para tudo (diferente do exemplo v13)
+        # 3. Construímos o app passando o .request() E .get_updates_request()
+        # Isso é crucial e estava faltando antes.
         application = Application.builder() \
             .token(BOT_TOKEN) \
             .request(request_motor) \
+            .get_updates_request(request_motor) \
             .build()
             
         # --- FIM DA MUDANÇA ---
