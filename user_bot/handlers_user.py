@@ -1016,6 +1016,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
 
+                        poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+                        poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
+
                         # (Loop otimizado da v5.11 - sem alteração)
                         for i, ep in enumerate(episodes):
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
