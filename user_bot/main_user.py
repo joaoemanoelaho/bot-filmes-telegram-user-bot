@@ -8,9 +8,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
-# --- INÍCIO DA MUDANÇA ---
-# Este é o import correto, como você descobriu!
+import telegram
 from ptbcontrib.aiohttp_request import AiohttpRequest
+
 # --- FIM DA MUDANÇA ---
 
 import handlers_user as handlers
