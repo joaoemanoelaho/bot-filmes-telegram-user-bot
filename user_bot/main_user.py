@@ -8,8 +8,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
 from telegram.ext import Application
+from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
-from telegram.request import HTTPXRequest, AiohttpRequest
+from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
 
 import handlers_user as handlers
@@ -70,12 +71,7 @@ async def startup():
             sock_connect=60,
         )
 
-        session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=256)
-        )
-
         request_motor = AiohttpRequest(
-            client_session=session,
             client_timeout=timeout,
             connection_pool_size=256,
         )
