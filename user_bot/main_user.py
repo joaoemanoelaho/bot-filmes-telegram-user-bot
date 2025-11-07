@@ -101,6 +101,7 @@ async def startup():
             connection_pool_size=256,
             proxy=final_proxy_url  # <-- ADICIONADO PROXY AQUI
         )
+        
 
         try:
             # Tenta construir com AIOHTTP
