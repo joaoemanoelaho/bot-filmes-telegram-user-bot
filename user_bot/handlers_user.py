@@ -886,6 +886,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     
                     # Usamos a função de details para pegar tudo
                     details = await db.get_full_episode_details(episode_id)
+
+                    poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+                    poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
                     
                     if details:
                         episode = details
@@ -897,11 +900,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
                             ep_title = episode.get('title', f"Episódio {ep_number}")
-                            
-                            poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-                            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
-                            
-                            # Este é o caption da foto (igual da imagem de referência)
+                            photo_url = poster_url_grande
+                            thumbnail_url = poster_url_pequeno
                             photo_caption = (
                                 f"📽️ *{series_title}*\n"
                                 f"🎬 *Temporada:* {season_number}\n"
@@ -921,8 +921,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     id=f"share_ep_{episode_id}",
                                     title=f"SÉRIE: {series_title}",
                                     description=f"S{season_number:02d}E{ep_number:02d} - {ep_title}",
-                                    photo_url=poster_url_grande,
-                                    thumbnail_url=poster_url_pequeno,
+                                    photo_url=photo_url,
+                                    thumbnail_url=thumbnail_url,
                                     caption=photo_caption,
                                     parse_mode="Markdown",
                                     reply_markup=reply_markup
