@@ -99,7 +99,7 @@ async def startup():
         request_motor = AiohttpRequest(
             client_timeout=timeout,
             connection_pool_size=256,
-            proxy_url=final_proxy_url  # <-- ADICIONADO PROXY AQUI
+            proxy=final_proxy_url  # <-- ADICIONADO PROXY AQUI
         )
 
         try:
