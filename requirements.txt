@@ -12,4 +12,4 @@ python-dotenv
 flask
 hachoir
 aiohttp[speedups]>=3.11
-ptbcontrib
+git+https://github.com/python-telegram-bot/ptbcontrib.git
