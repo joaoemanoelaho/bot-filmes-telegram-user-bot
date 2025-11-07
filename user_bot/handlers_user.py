@@ -341,7 +341,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
              InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
         ]
         main_menu = InlineKeyboardMarkup(keyboard)
-        community_link = "https://t.me/meucinepipocacanal"
+        community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
         community_text = (
             "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
             f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
