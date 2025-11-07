@@ -243,7 +243,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                         keyboard = [
                             [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ],
-                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title) ]
+                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ]
                         ]
                         if nav_row:
                             keyboard.append(nav_row)
@@ -265,6 +265,66 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     import traceback
                     traceback.print_exc() # Adiciona mais detalhes do erro
                     await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.")
+                return
+            
+            elif payload.startswith("show_ep_"):
+                try:
+                    episode_id = int(payload.split('_')[2])
+
+                    # --- VERIFICAÇÃO DE VIP ---
+                    if not await db.is_user_vip(user.id):
+                        await context.bot.send_message(
+                            chat_id=user.id,
+                            text=(
+                                f"Opa, {user.first_name}! 👋\n\n"
+                                "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
+                                "Clique no botão abaixo para ver as opções."
+                            ),
+                            parse_mode="Markdown"
+                        )
+                        # Simula um clique no botão main_vip para mostrar o menu de pagamento
+                        class FakeQuery:
+                            def __init__(self, usr, msg):
+                                self.from_user = usr
+                                self.message = msg
+                                self.data = "main_vip"
+                            async def answer(self): pass
+                            async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
+                            async def delete_message(self): pass
+                            async def reply_photo(self, *a, **kw): await context.bot.send_photo(user.id, *a, **kw)
+                        class FakeUpdate:
+                            def __init__(self, usr, msg):
+                                self.effective_user = usr
+                                self.callback_query = FakeQuery(usr, msg)
+                                self.message = msg
+                        await button_handler(FakeUpdate(user, message_to_reply), context)
+                        return
+                    # --- FIM DA VERIFICAÇÃO ---
+
+                    status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
+                    bot_username = context.bot.username
+
+                    # Chama a função helper que gera a seleção de áudio
+                    message_text, reply_markup = await _get_episode_details_message(
+                        episode_id,
+                        bot_username,
+                        delete_msg_id=status_msg.message_id
+                    )
+
+                    if reply_markup:
+                        await status_msg.edit_text(
+                            text=message_text,
+                            reply_markup=reply_markup,
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        await status_msg.edit_text(text=message_text.replace("Selecione o áudio (o bot irá te chamar no privado):", "Erro: Nenhum áudio encontrado para este episódio."))
+
+                except Exception as e:
+                    print(f"Erro ao processar payload show_ep_: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar detalhes do episódio.")
                 return
 
             elif payload.startswith("watch_"):
@@ -816,6 +876,71 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             # O offset é uma string, convertemos para int.
             # Se for vazio (''), usamos 0.
             current_offset = int(update.inline_query.offset) if update.inline_query.offset else 0
+
+            #
+            # === ROTA 0: COMPARTILHAMENTO DE EPISÓDIO (EP_CARD) ===
+            #
+            if query_text.startswith("ep_card:"):
+                try:
+                    episode_id = int(query_text.split(':')[1])
+                    
+                    # Usamos a função de details para pegar tudo
+                    details = await db.get_full_episode_details(episode_id)
+                    
+                    if details:
+                        episode = details
+                        season = details.get('seasons')
+                        series = season.get('series') if season else None
+
+                        if season and series:
+                            series_title = series.get('title', 'Série')
+                            ep_number = episode.get('episode_number', 0)
+                            season_number = season.get('season_number', 0)
+                            ep_title = episode.get('title', f"Episódio {ep_number}")
+                            
+                            poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
+                            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
+                            
+                            # Este é o caption da foto (igual da imagem de referência)
+                            photo_caption = (
+                                f"📽️ *{series_title}*\n"
+                                f"🎬 *Temporada:* {season_number}\n"
+                                f"🎯 *Episódio:* {ep_number}"
+                            )
+                            
+                            # Este é o deeplink para o start
+                            watch_url = f"https://t.me/{bot_username}?start=show_ep_{episode_id}"
+                            
+                            keyboard = [[
+                                InlineKeyboardButton("Assistir - ⏩", url=watch_url)
+                            ]]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+
+                            results.append(
+                                InlineQueryResultPhoto(
+                                    id=f"share_ep_{episode_id}",
+                                    title=f"SÉRIE: {series_title}",
+                                    description=f"S{season_number:02d}E{ep_number:02d} - {ep_title}",
+                                    photo_url=poster_url_grande,
+                                    thumbnail_url=poster_url_pequeno,
+                                    caption=photo_caption,
+                                    parse_mode="Markdown",
+                                    reply_markup=reply_markup
+                                )
+                            )
+                            is_personal = True # É um card específico
+                            cache_time = 10 # Pode cachear por um tempinho
+                
+                except Exception as e:
+                    print(f"Erro ao gerar ep_card: {e}")
+                
+                # Responde e encerra a função
+                # (A lógica de retry será pega no final da função)
+                
+                # --- Usamos o safe_call no final da função ---
+                pass # Deixa o código fluir para o safe_call no final
+            
+            ### FIM DA MUDANÇA 3 ###
 
             #
             # === ROTA 1: BUSCA DE EPISÓDIOS ===
