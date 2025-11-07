@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
 from telegram.ext import Application
+# O import do ptbcontrib está correto aqui
 from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
 from telegram.request import HTTPXRequest
@@ -31,24 +32,38 @@ session: aiohttp.ClientSession | None = None  # sessão global aiohttp
 
 
 # ==========================================================
-# 🔁 ERROR HANDLER COM RETRY AUTOMÁTICO
+# 🔁 ERROR HANDLER COM RETRY AUTOMÁTICO (CORRIGIDO)
 # ==========================================================
 async def error_handler(update: object, context):
-    print(f"[DEBUG] ERROR_HANDLER ATIVADO! Erro: {context.error}")
+    """Loga os erros e tenta re-processar updates em caso de erro de rede."""
+    
+    e = context.error
+    print(f"[DEBUG] ERROR_HANDLER ATIVADO! Erro: {e}")
 
-    try:
-        raise context.error
-    except NetworkError:
-        print("⚠️ NetworkError detectado — tentando novamente em 3s...")
+    # Verifica se é um erro de rede (NetworkError ou erros do aiohttp)
+    # Adicionamos aiohttp.ClientError para pegar erros como ClientOSError
+    if isinstance(e, (NetworkError, aiohttp.ClientError)):
+        print(f"⚠️ NetworkError detectado ({type(e).__name__}) — tentando novamente em 3s...")
         await asyncio.sleep(3)
-        try:
-            if update and hasattr(update, "callback_query"):
-                await update.callback_query.answer()
-        except Exception as e:
-            print(f"❌ Falha no retry automático: {e}")
-    except Exception:
-        import traceback
-        traceback.print_exc()
+        
+        # Evita retry em updates nulos ou que não sejam Updates
+        if update and isinstance(update, Update):
+            try:
+                # A forma correta de retry é re-processar o update inteiro,
+                # não chamar .answer()
+                print(f"🔄 Tentando re-processar update: {update.update_id}")
+                await context.application.process_update(update)
+            except Exception as retry_err:
+                # Se o retry falhar (ex: a conexão ainda está ruim), apenas logamos
+                print(f"❌ Falha no retry automático após erro de rede: {retry_err}")
+        else:
+            print("⚠️ Erro de rede sem 'update' associado ou 'update' não é um objeto Update. Retry não é possível.")
+        return  # Sai do handler após tratar o erro de rede
+
+    # Se for qualquer outro erro (como 'NoneType')
+    print(f"❌ Erro não-rede no handler: {e}")
+    import traceback
+    traceback.print_exc()
 
 
 # ==========================================================
@@ -248,3 +263,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
