@@ -10,6 +10,7 @@ from telegram import Update, Bot
 from telegram.ext import Application
 import telegram
 from ptbcontrib.aiohttp_request import AiohttpRequest
+import aiohttp
 
 # --- FIM DA MUDANÇA ---
 
@@ -47,12 +48,16 @@ async def startup():
 
         # 2. Criamos o objeto de request com os timeouts
         # Usamos os mesmos timeouts longos que já tínhamos
+        timeout = aiohttp.ClientTimeout(
+            total=None,            # sem limite total
+            connect=30.0,          # tempo limite de conexão
+            sock_read=300.0,       # leitura
+            sock_connect=30.0      # handshake TCP
+        )
+
         request_motor = AiohttpRequest(
-            connect_timeout=30.0,
-            read_timeout=300.0,
-            write_timeout=300.0,
-            pool_timeout=30.0,
-            connection_pool_size=256 # Como no exemplo que você achou
+            client_timeout=timeout,
+            connection_pool_size=256
         )
 
         # 3. Construímos o app passando o .request() E .get_updates_request()
