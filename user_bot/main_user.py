@@ -8,9 +8,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
 from telegram.ext import Application
-from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
-from telegram.request import HTTPXRequest
+from telegram.request import HTTPXRequest, AiohttpRequest
 from telegram.error import NetworkError
 
 import handlers_user as handlers
