@@ -1,13 +1,13 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.12 - OTIMIZAÇÃO N+1 e LIMITE DE 50)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.13 - COM PROTEÇÃO SAFECALL)
 #
 from telegram import (
-    Update, InlineKeyboardMarkup, InlineKeyboardButton, 
-    InlineQueryResultArticle, InputTextMessageContent, 
+    Update, InlineKeyboardMarkup, InlineKeyboardButton,
+    InlineQueryResultArticle, InputTextMessageContent,
     InlineQueryResultPhoto, InputMediaPhoto
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
-from telegram.error import NetworkError 
+from telegram.error import NetworkError
 import database as db
 from config import ADMIN_IDS, STORAGE_CHANNEL_ID
 import payments
@@ -22,9 +22,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 import uuid
 import tastedive_api
-import asyncio 
+import asyncio
 
-    
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
@@ -34,6 +34,25 @@ sys.path.insert(0, parent_dir)
 # =================================================================
 DB_SEMAPHORE = asyncio.Semaphore(20)
 
+def safe_call(obj, method_name, *args, **kwargs):
+    """Evita crash caso o objeto ou método estejam ausentes."""
+    if not obj:
+        print(f"[WARN] safe_call ignorado: {method_name} chamado com None")
+        return None
+    method = getattr(obj, method_name, None)
+    if not method:
+        print(f"[WARN] safe_call ignorado: {method_name} inexistente em {type(obj)}")
+        return None
+    try:
+        # Verifica se é um método assíncrono
+        if asyncio.iscoroutinefunction(method):
+            # Se for, retorna a corrotina (deve ser chamada com await)
+            return method(*args, **kwargs)
+        else:
+            # Se for síncrono, chama diretamente
+            return method(*args, **kwargs)
+    except Exception as e:
+        print(f"[WARN] Erro em safe_call({method_name}): {e}")
 
 # =================================================================
 # === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
@@ -43,10 +62,10 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
         # OTIMIZAÇÃO: 3 chamadas ao DB -> 1 chamada
-        details = await db.get_full_episode_details(episode_id) 
+        details = await db.get_full_episode_details(episode_id)
         if not details:
             return ("Erro: Episódio não encontrado.", None)
-        
+
         episode = details
         season = details.get('seasons')
         series = season.get('series') if season else None
@@ -67,7 +86,7 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
 
         keyboard = []
         audio_row = []
-        
+
         if episode.get('dubbed_file_id'):
             payload = f"watch_ep_{episode['id']}_dub"
             if delete_msg_id:
@@ -84,12 +103,12 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
             audio_row.append(
                 InlineKeyboardButton("Legendado 🇺🇸", url=url)
             )
-        
+
         if audio_row:
              keyboard.append(audio_row)
-        
+
         return (message_text, InlineKeyboardMarkup(keyboard))
-        
+
     except Exception as e:
         print(f"Erro em _get_episode_details_message: {e}")
         import traceback
@@ -110,16 +129,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             user = update.effective_user
             message_to_reply = update.message
-        
+
         if context.args:
             payload = context.args[0]
-            
+
             if not is_query:
                 try:
                     await message_to_reply.delete()
                 except Exception as e:
                     print(f"[WARN] Não foi possível deletar a msg /start do usuário: {e}")
-            
+
             if payload.startswith("watch_ep_"):
                 try:
                     parts = payload.split('_')
@@ -128,7 +147,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     msg_to_delete_id = None
                     if len(parts) > 5 and parts[4] == 'del':
                         msg_to_delete_id = int(parts[5])
-                    
+
                     if msg_to_delete_id:
                         try:
                             await context.bot.delete_message(chat_id=user.id, message_id=msg_to_delete_id)
@@ -136,7 +155,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             print(f"[WARN] Não foi possível deletar msg de áudio {msg_to_delete_id}: {e}")
 
                     await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
-                    
+
                     if not await db.is_user_vip(user.id):
                         await context.bot.send_message(
                             chat_id=user.id,
@@ -150,7 +169,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         class FakeQuery:
                             def __init__(self, usr, msg):
                                 self.from_user = usr
-                                self.message = msg 
+                                self.message = msg
                                 self.data = "main_vip"
                             async def answer(self): pass
                             async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
@@ -165,7 +184,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         return
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
-                    
+
                     full_details = await db.get_full_episode_details(episode_id)
                     if not full_details:
                         await status_msg.edit_text("Erro ao carregar dados do episódio.")
@@ -178,7 +197,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     if not season_data or not series_data:
                         await status_msg.edit_text("Erro ao carregar dados da série.")
                         return
-                    
+
                     file_id_to_send = None
                     audio_text = "N/A"
                     if audio_type == 'dub' and episode_data.get('dubbed_file_id'):
@@ -193,24 +212,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         series_title = series_data.get('title', 'Série')
                         season_number = season_data.get('season_number', 0)
                         series_id_for_related = series_data.get('id', 0)
-                        
+
                         video_caption = (
                             f"📺 *{series_title}*\n"
                             f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
                             f"---\n"
                             f"🍿 Assistido com @{bot_username}"
                         )
-                        
+
                         # --- CORREÇÃO (v5.13): Lógica de navegação otimizada ---
                         season_id = season_data.get('id')
                         current_ep_num = episode_data.get('episode_number', 0)
-                        
+
                         # Faz 2 buscas rápidas em paralelo, em vez de 1 lenta
                         prev_ep, next_ep = await asyncio.gather(
                             db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
                             db.get_neighbor_episode(season_id, current_ep_num, 'next')
                         )
-                            
+
                         nav_row = []
                         if prev_ep:
                             nav_row.append(
@@ -223,38 +242,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         # --- FIM DA CORREÇÃO ---
 
                         keyboard = [
-                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ], 
+                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ],
                             [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series_title) ]
                         ]
                         if nav_row:
                             keyboard.append(nav_row)
                         video_reply_markup = InlineKeyboardMarkup(keyboard)
-                        
+
                         await context.bot.send_video(
-                            chat_id=user.id, 
+                            chat_id=user.id,
                             video=file_id_to_send,
                             caption=video_caption,
                             parse_mode="Markdown",
                             reply_markup=video_reply_markup,
                             protect_content=True
                         )
-                        await status_msg.delete() 
+                        await status_msg.delete()
                     else:
                         await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
                 except Exception as e:
                     print(f"Erro ao processar payload watch_ep_: {e}")
                     import traceback
                     traceback.print_exc() # Adiciona mais detalhes do erro
-                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.") 
+                    await context.bot.send_message(chat_id=user.id, text="Erro ao carregar episódio.")
                 return
 
             elif payload.startswith("watch_"):
-                context.args = [payload.split('_')[1]] 
-                await watch_command_handler(update, context, message_deletada=True) 
+                context.args = [payload.split('_')[1]]
+                await watch_command_handler(update, context, message_deletada=True)
                 return
-                
+
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
-        
+
         keyboard = [
             [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),],
             [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
@@ -262,7 +281,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
              InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
         ]
         main_menu = InlineKeyboardMarkup(keyboard)
-        community_link = "https://t.me/meucinepipocacanal" 
+        community_link = "https://t.me/meucinepipocacanal"
         community_text = (
             "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
             f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
@@ -315,16 +334,16 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # (Função da v5.10 - Sem alterações)
+    # (Função da v5.10 - COM MUDANÇAS)
     query = update.callback_query
-    
+
     if not query:
         if isinstance(update, object) and hasattr(update, 'callback_query'):
              query = update.callback_query
         else:
              print("[ERRO] button_handler recebeu um update inválido.")
              return
-    
+
     callback_data = query.data
     user_id = query.from_user.id
     print(f"Usuário {user_id} clicou no botão: {callback_data}")
@@ -332,29 +351,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if callback_data.startswith("play_"):
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
-        cooldown = 10 
-        
+        cooldown = 10
+
         if now - last_request < cooldown:
-            await query.answer(
+            # --- MUDANÇA ---
+            await safe_call(query, "answer",
                 text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s antes de outra ação.",
                 show_alert=True
             )
+            # --- FIM DA MUDANÇA ---
             return
-        
+
         async with DB_SEMAPHORE:
-            await query.answer()
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
             _, movie_id_str, audio_choice = callback_data.split('_')
             movie_id = int(movie_id_str)
-            await query.edit_message_caption(caption="⏳ Carregando seu filme, por favor aguarde...")
-            
+            await safe_call(query, "edit_message_caption", caption="⏳ Carregando seu filme, por favor aguarde...")
+            # --- FIM DA MUDANÇA ---
+
             movie = await db.get_movie_by_id(movie_id)
-            
+
             if not movie:
-                await query.edit_message_caption(caption="Erro: Filme não encontrado.")
+                # --- MUDANÇA ---
+                await safe_call(query, "edit_message_caption", caption="Erro: Filme não encontrado.")
+                # --- FIM DA MUDANÇA ---
                 return
             file_id_to_send = movie.get('dubbed_file_id') if audio_choice == "dub" else movie.get('subtitled_file_id')
             if file_id_to_send:
-                await query.delete_message()
+                # --- MUDANÇA ---
+                await safe_call(query, "delete_message")
+                # --- FIM DA MUDANÇA ---
                 bot_username = context.bot.username
                 video_caption = (
                     f"🎬 *{movie['title']}* ({movie['year']})\n\n"
@@ -363,7 +390,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"🍿 Assistido com @{bot_username}"
                 )
                 keyboard = [[
-                    InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"), 
+                    InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"),
                     InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{movie_id}")
                 ]]
                 video_reply_markup = InlineKeyboardMarkup(keyboard)
@@ -379,52 +406,58 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             reply_markup=video_reply_markup,
                             protect_content=True
                         )
-                        break 
+                        break
                     except NetworkError as e:
                         print(f"Erro de rede ao enviar vídeo (tentativa {attempt + 1}/{max_retries}): {e}")
                         if attempt + 1 == max_retries:
                             print("Falha ao enviar vídeo após 3 tentativas.")
-                            return 
-                        await asyncio.sleep(2) 
+                            return
+                        await asyncio.sleep(2)
 
                 await db.log_movie_view(movie_id=movie_id, user_id=user_id)
                 context.user_data['last_action_time'] = time.time()
             else:
-                await query.edit_message_caption(caption="😔 Desculpe, esta versão do filme não está disponível.")
+                # --- MUDANÇA ---
+                await safe_call(query, "edit_message_caption", caption="😔 Desculpe, esta versão do filme não está disponível.")
+                # --- FIM DA MUDANÇA ---
 
     elif callback_data.startswith("related_"):
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
-        cooldown = 10 
-        
+        cooldown = 10
+
         if now - last_request < cooldown:
-            await query.answer(
+            # --- MUDANÇA ---
+            await safe_call(query, "answer",
                 text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s antes de outra ação.",
                 show_alert=True
             )
+            # --- FIM DA MUDANÇA ---
             return
-        
+
         async with DB_SEMAPHORE:
-            await query.answer()
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
+            # --- FIM DA MUDANÇA ---
             parts = callback_data.split('_')
             media_id = int(parts[1])
-            media_type = 'movie' 
+            media_type = 'movie'
             if len(parts) > 2 and parts[2] == 'series':
                 media_type = 'series'
             title_to_search = None
             if media_type == 'movie':
                 media_obj = await db.get_movie_by_id(media_id)
                 if media_obj: title_to_search = media_obj['title']
-            else: 
+            else:
                 media_obj = await db.get_series_by_id(media_id)
                 if media_obj: title_to_search = media_obj['title']
             if not title_to_search:
                 await context.bot.send_message(chat_id=user_id, text="Não consegui encontrar a mídia original.")
                 return
             status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando mídias relacionadas a '{title_to_search}'...")
-            
+
             recommendations_from_api = await tastedive_api.get_recommendations(title_to_search)
-            
+
             if recommendations_from_api:
                 existing_recommendations = await db.filter_existing_titles(recommendations_from_api)
             else:
@@ -437,14 +470,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 keyboard.append([InlineKeyboardButton(f"🔎 {title}", switch_inline_query_current_chat=title)])
             message_text = f"Se você gostou de '{title_to_search}', talvez também goste destes:\n\nClique em um título para buscar:"
             await status_msg.edit_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
-            
+
             context.user_data['last_action_time'] = time.time()
 
     elif callback_data == "main_request":
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
-                await query.answer() 
+                # --- MUDANÇA ---
+                await safe_call(query, "answer")
+                # --- FIM DA MUDANÇA ---
                 keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
                             [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -454,26 +489,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "Assine para poder pedir filmes/séries e ver o que está em alta."
                 )
                 try:
-                    await query.edit_message_text( 
+                    # --- MUDANÇA ---
+                    await safe_call(query, "edit_message_text",
                         text=message_text,
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
+                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
                 return
-            
-            await query.answer()
+
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
             context.user_data['state'] = 'awaiting_request'
-            await query.edit_message_text(
+            await safe_call(query, "edit_message_text",
                 text="Qual filme ou série você gostaria de ver no catálogo?\n\n"
                      "Por favor, envie o nome completo. Para cancelar, digite /cancelar."
             )
-    
+            # --- FIM DA MUDANÇA ---
+
     elif callback_data == "main_top":
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
             if not await db.is_user_vip(user_id):
-                await query.answer() 
+                # --- MUDANÇA ---
+                await safe_call(query, "answer")
+                # --- FIM DA MUDANÇA ---
                 keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
                             [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -483,15 +524,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "Assine para poder pedir filmes/séries e ver o que está em alta."
                 )
                 try:
-                    await query.edit_message_text( 
+                    # --- MUDANÇA ---
+                    await safe_call(query, "edit_message_text",
                         text=message_text,
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
+                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
                 return
-            
-            await query.answer()
+
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
+            # --- FIM DA MUDANÇA ---
             keyboard = [
                 [InlineKeyboardButton("🏆 Top Semana", callback_data="top_7")],
                 [InlineKeyboardButton("🗓️ Top Mês", callback_data="top_30")],
@@ -499,23 +544,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text("Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
-            
+            # --- MUDANÇA ---
+            await safe_call(query, "edit_message_text", text="Selecione o período do ranking que deseja visualizar:", reply_markup=reply_markup)
+            # --- FIM DA MUDANÇA ---
+
     elif callback_data.startswith("top_"):
         async with DB_SEMAPHORE:
-            await query.answer()
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
+            # --- FIM DA MUDANÇA ---
             period_days = int(callback_data.split('_')[1])
             period_text = "Geral (Todos os Tempos)"
             if period_days == 7: period_text = "da Semana"
             if period_days == 30: period_text = "do Mês"
-            await query.edit_message_text(f"🏆 Buscando o Top 10 {period_text}, aguarde...")
-            
+            # --- MUDANÇA ---
+            await safe_call(query, "edit_message_text", text=f"🏆 Buscando o Top 10 {period_text}, aguarde...")
+            # --- FIM DA MUDANÇA ---
+
             trending_movies = await db.get_trending(period_days=period_days)
-            
+
             if not trending_movies:
-                await query.edit_message_text("Ainda não há dados suficientes para gerar um ranking.")
+                # --- MUDANÇA ---
+                await safe_call(query, "edit_message_text", text="Ainda não há dados suficientes para gerar um ranking.")
+                # --- FIM DA MUDANÇA ---
                 return
-                
+
             keyboard = []
             for movie in trending_movies:
                 button = [InlineKeyboardButton(f"{movie['title']} ({movie['year']})", callback_data=f"show_card_{movie['movie_id']}")]
@@ -523,41 +576,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="main_top")])
             reply_markup = InlineKeyboardMarkup(keyboard)
             message_text = f"🏆 **Top 10 {period_text}** 🏆\n\nClique em um filme abaixo para ver mais detalhes:"
-            await query.edit_message_text(message_text, parse_mode="Markdown", reply_markup=reply_markup)
-            
+            # --- MUDANÇA ---
+            await safe_call(query, "edit_message_text", text=message_text, parse_mode="Markdown", reply_markup=reply_markup)
+            # --- FIM DA MUDANÇA ---
+
     elif callback_data.startswith("show_card_"):
         async with DB_SEMAPHORE:
-            await query.answer()
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
+            # --- FIM DA MUDANÇA ---
             movie_id = int(callback_data.split('_')[2])
-            
+
             movie = await db.get_movie_by_id(movie_id)
-            
+
             if not movie:
                 try:
-                    await query.edit_message_text("Desculpe, este filme não foi encontrado.")
+                    # --- MUDANÇA ---
+                    await safe_call(query, "edit_message_text", text="Desculpe, este filme não foi encontrado.")
+                    # --- FIM DA MUDANÇA ---
                 except Exception:
                     pass
                 return
-            
+
             try:
-                await query.delete_message() 
+                # --- MUDANÇA ---
+                await safe_call(query, "delete_message")
+                # --- FIM DA MUDANÇA ---
             except Exception:
-                pass 
+                pass
 
             bot_username = context.bot.username
             watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
-            
+
             keyboard = [[
                 InlineKeyboardButton("Assistir ⏯️", url=watch_url),
                 InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            
+
             photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie.get('genre', 'N/A')}"
             )
-            
+
             await context.bot.send_photo(
                 chat_id=user_id,
                 photo=movie['poster_url'],
@@ -565,47 +626,62 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
-        
+
     elif callback_data == "back_to_main":
-        await query.answer()
+        # --- MUDANÇA ---
+        await safe_call(query, "answer")
+        # --- FIM DA MUDANÇA ---
         await start(update, context)
-        
+
     elif callback_data == "main_vip":
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
-        cooldown = 60 
-        
+        cooldown = 60
+
         if now - last_request < cooldown:
-            await query.answer(
+            # --- MUDANÇA ---
+            await safe_call(query, "answer",
                 text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s para gerar um novo PIX.",
                 show_alert=True
             )
+            # --- FIM DA MUDANÇA ---
             return
 
         async with DB_SEMAPHORE:
-            await query.answer()
+            # --- MUDANÇA ---
+            await safe_call(query, "answer")
+            # --- FIM DA MUDANÇA ---
             if await db.is_user_vip(user_id):
-                try: await query.edit_message_text("✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
+                try:
+                    # --- MUDANÇA ---
+                    await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
+                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
                 return
-                
+
             user_details = await db.get_user_details(user_id)
             active_payment_id = user_details.get('active_payment_id') if user_details else None
-            
+
             if active_payment_id:
-                await query.edit_message_text("⏳ Verificando seu pagamento anterior, aguarde...")
+                # --- MUDANÇA ---
+                await safe_call(query, "edit_message_text", text="⏳ Verificando seu pagamento anterior, aguarde...")
+                # --- FIM DA MUDANÇA ---
                 status = await payments.check_payment_status(active_payment_id)
                 if status == 'created':
-                    await query.edit_message_text("Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
-                    return 
-            
+                    # --- MUDANÇA ---
+                    await safe_call(query, "edit_message_text", text="Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
+                    # --- FIM DA MUDANÇA ---
+                    return
+
             context.user_data['last_pix_request'] = time.time()
-                
-            await query.edit_message_text("⏳ Gerando sua cobrança PIX, aguarde...")
-            vip_price = 4.00 
-            
+
+            # --- MUDANÇA ---
+            await safe_call(query, "edit_message_text", text="⏳ Gerando sua cobrança PIX, aguarde...")
+            # --- FIM DA MUDANÇA ---
+            vip_price = 4.00
+
             payment_data = await payments.create_pix_payment(user_id=user_id, amount=vip_price)
-            
+
             if payment_data and payment_data.get("qr_code_base64"):
                 payment_id = payment_data['payment_id']
                 await db.set_user_active_payment_id(user_id, payment_id)
@@ -626,18 +702,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 keyboard = [[InlineKeyboardButton("✅ Já Paguei", callback_data=f"check_payment_{payment_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                if hasattr(query, 'delete_message'):
-                    await query.delete_message()
-                elif hasattr(query, 'message') and hasattr(query.message, 'delete'):
-                     await query.message.delete()
-                
+
+                # --- MUDANÇA ---
+                # Esta lógica é mais segura do que a sua anterior
+                await safe_call(query.message, "delete")
+                # --- FIM DA MUDANÇA ---
+
                 await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
                     parse_mode="Markdown", reply_markup=reply_markup
                 )
             else:
-                await query.edit_message_text("😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
+                # --- MUDANÇA ---
+                await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
+                # --- FIM DA MUDANÇA ---
 
     elif callback_data.startswith("check_payment_"):
         async with DB_SEMAPHORE:
@@ -645,20 +723,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             now = time.time()
             last_check = context.user_data.get('last_payment_check', 0)
             if now - last_check < 60:
-                await query.answer(
+                # --- MUDANÇA ---
+                await safe_call(query, "answer",
                     text=f"✋ Por favor, aguarde {int(60 - (now - last_check))}s antes de verificar novamente.",
                     show_alert=True
                 )
+                # --- FIM DA MUDANÇA ---
                 return
             context.user_data['last_payment_check'] = now
-            
+
             status = await payments.check_payment_status(payment_id)
-            
+
             if status == 'paid':
-                await query.answer()
+                # --- MUDANÇA ---
+                await safe_call(query, "answer")
+                # --- FIM DA MUDANÇA ---
                 await db.set_user_as_vip(user_id, duration_days=30)
                 await db.clear_user_active_payment_id(user_id)
-                await query.message.delete()
+                # --- MUDANÇA ---
+                await safe_call(query.message, "delete")
+                # --- FIM DA MUDANÇA ---
                 await context.bot.send_message(
                     chat_id=user_id,
                     text="🎉 **Pagamento confirmado!** 🎉\n\n"
@@ -666,35 +750,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     parse_mode="Markdown"
                 )
             else:
-                await query.answer(
+                # --- MUDANÇA ---
+                await safe_call(query, "answer",
                     text=" Pagamento ainda não confirmado.\n\nA confirmação pode levar alguns instantes.",
                     show_alert=True
                 )
-            
+                # --- FIM DA MUDANÇA ---
+
     elif callback_data.startswith("ep_nav_"):
-        # (Função da v5.10 - Sem alterações)
+        # (Função da v5.10 - COM MUDANÇAS)
         async with DB_SEMAPHORE:
             try:
-                await query.answer() 
+                # --- MUDANÇA ---
+                await safe_call(query, "answer")
+                # --- FIM DA MUDANÇA ---
             except Exception as e:
                 print(f"Ignorando erro de timeout no query.answer(): {e}")
 
             new_episode_id = int(callback_data.split('_')[2])
-            
+
             try:
-                await query.delete_message() 
+                # --- MUDANÇA ---
+                await safe_call(query, "delete_message")
+                # --- FIM DA MUDANÇA ---
             except Exception as e:
                 print(f"Erro ao deletar msg de vídeo na navegação: {e}")
 
             placeholder_msg = await context.bot.send_message(chat_id=user_id, text="Carregando opções...")
-            
+
             bot_username = context.bot.username
             message_text, reply_markup = await _get_episode_details_message(
-                new_episode_id, 
-                bot_username, 
-                delete_msg_id=placeholder_msg.message_id 
+                new_episode_id,
+                bot_username,
+                delete_msg_id=placeholder_msg.message_id
             )
-            
+
             if reply_markup:
                 await placeholder_msg.edit_text(
                     text=message_text,
@@ -703,7 +793,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
             else:
                 await placeholder_msg.edit_text(message_text)
-            
+
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.12) ===
 # =================================================================
@@ -711,26 +801,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    
+
     results = []
     cache_time = 30 # Padrão
     is_personal = False
     next_offset = None # Inicializa o next_offset
-    
+
     try:
         async with DB_SEMAPHORE:
             query_text = update.inline_query.query
             bot_username = context.bot.username
-            
+
             # --- CORREÇÃO (v5.13): Lê o offset atual ---
             # O offset é uma string, convertemos para int.
             # Se for vazio (''), usamos 0.
             current_offset = int(update.inline_query.offset) if update.inline_query.offset else 0
-            
+
             #
             # === ROTA 1: BUSCA DE EPISÓDIOS ===
             #
-            
+
             # --- CORREÇÃO (v5.13): Novo formato de query: season:<id>:<offset> ---
             # (O formato antigo 'season:<id>' também funciona para a página 1)
             season_id = None
@@ -742,23 +832,23 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         current_offset = int(parts[2]) # Pega o offset do *botão*
                 except (IndexError, ValueError):
                     season_id = None
-            
+
             if season_id:
             # --- FIM DA CORREÇÃO ---
                 try:
                     user_id = update.inline_query.from_user.id
                     is_vip = await db.is_user_vip(user_id)
-                    
+
                     # --- CORREÇÃO (v5.13): Define o limite e chama com offset ---
                     # Usamos 48 para deixar espaço para os botões de nav
-                    page_limit = 48 
-                    
+                    page_limit = 48
+
                     episodes, season = await db.get_episodes_for_season(
-                        season_id, 
-                        limit=page_limit, 
+                        season_id,
+                        limit=page_limit,
                         offset=current_offset
                     )
-                    
+
                     if not is_vip:
                         # (Lógica do VIP sem alteração)
                         results.append(
@@ -766,12 +856,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 id="vip_required_series",
                                 title="🍿 Acesso Pipoca Premium Necessário!",
                                 description="Clique aqui para liberar todas as séries do catálogo.",
-                                thumbnail_url="https://i.imgur.com/L3Ew4wt.png", 
+                                thumbnail_url="https://i.imgur.com/L3Ew4wt.png",
                                 reply_markup=InlineKeyboardMarkup([[
                                         InlineKeyboardButton(
-                                            "Quero meu Acesso Premium! 🚀", 
+                                            "Quero meu Acesso Premium! 🚀",
                                             url=f"https://t.me/{bot_username}?start=premium"
-                                        ) 
+                                        )
                                     ]]),
                                 input_message_content=InputTextMessageContent(
                                     message_text=(
@@ -779,13 +869,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
                                         "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
                                     ),
-                                    parse_mode="Markdown",                                     
+                                    parse_mode="Markdown",
                                 )
                             )
                         )
                         cache_time = 5
                         is_personal = True
-                
+
                     elif not episodes and current_offset == 0:
                         # (Lógica de 'sem episódios' sem alteração)
                         results.append(InlineQueryResultArticle(
@@ -795,16 +885,16 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             input_message_content=InputTextMessageContent("Nenhum episódio encontrado.")
                         ))
                         cache_time = 10
-                            
+
                     else: # Usuário é VIP e existem episódios
-                        
+
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
-                        
+
                         # (Loop otimizado da v5.11 - sem alteração)
                         for i, ep in enumerate(episodes):
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
-                            
+
                             message_text = (
                                 f"📽️ *{series_title}*\n"
                                 f"🎬 *Temporada:* {season['season_number']}\n"
@@ -822,7 +912,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 payload = f"watch_ep_{ep['id']}_sub"
                                 url = f"https://t.me/{bot_username}?start={payload}"
                                 audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=url))
-                            
+
                             if audio_row:
                                 reply_markup = InlineKeyboardMarkup([audio_row])
                                 results.append(
@@ -830,7 +920,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         id=f"ep_{ep['id']}",
                                         title=f"Episódio : {ep['episode_number']}",
                                         description=f"🎬 {series_title} | {ep_title}",
-                                        thumbnail_url="https://i.imgur.com/TqA8sE8.png", 
+                                        thumbnail_url="https://i.imgur.com/TqA8sE8.png",
                                         reply_markup=reply_markup,
                                         input_message_content=InputTextMessageContent(
                                             message_text=message_text,
@@ -838,7 +928,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         )
                                     )
                                 )
-                        
+
                         # --- CORREÇÃO (v5.13): Botões Manuais de Paginação ---
                         nav_buttons = []
                         if current_offset > 0:
@@ -861,7 +951,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     ]])
                                 )
                             )
-                        
+
                         if len(episodes) == page_limit:
                             # Se a busca retornou o NÚMERO MÁXIMO (48),
                             # assumimos que há uma próxima página.
@@ -883,16 +973,16 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     ]])
                                 )
                             )
-                        
+
                         # Adiciona os botões de navegação DEPOIS dos resultados
                         results.extend(nav_buttons)
                         # --- FIM DA CORREÇÃO ---
 
                         cache_time = 10
                         is_personal = True
-                
+
                 except Exception as e:
-                    print(f"❌ Erro na busca inline de episódios: {e}") 
+                    print(f"❌ Erro na busca inline de episódios: {e}")
                     results = [InlineQueryResultArticle(
                         id="error_eps",
                         title="Erro ao buscar episódios",
@@ -914,21 +1004,21 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 ]
                 is_personal = True
                 cache_time = 5
-            
+
             else: # Usuário está digitando uma busca normal
                 results.append(
                     InlineQueryResultArticle(
                         id="static_help",
                         title="Ajuda",
                         description="Como usar o bot de busca",
-                        thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
+                        thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png",
                         input_message_content=InputTextMessageContent(
                             f"Para buscar, digite @{context.bot.username} e o nome do filme.\n\n"
                             "Para ver o menu principal, envie o comando /start."
                         )
                     )
                 )
-                
+
                 movies_from_db = await db.search_movies(query_text, limit=5)
                 series_from_db = await db.search_series_by_title(query_text, limit=5)
                 bot_username = context.bot.username
@@ -950,8 +1040,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         results.append(
                             InlineQueryResultPhoto(
                                 id=f"movie_{movie['movie_id']}",
-                                title=f"FILME: {movie['title']}", 
-                                description=f"{movie['year']} - {movie.get('genre', 'N/A')}", 
+                                title=f"FILME: {movie['title']}",
+                                description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
                                 photo_url=poster_url_grande,
                                 thumbnail_url=poster_url_pequeno,
                                 caption=photo_caption,
@@ -979,7 +1069,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             keyboard.append([
                                 InlineKeyboardButton(
                                     f"▶️ Temporada {season['season_number']}",
-                                    switch_inline_query_current_chat=f"season:{season['id']}:0" 
+                                    switch_inline_query_current_chat=f"season:{season['id']}:0"
                                 )
                             ])
                             # --- FIM DA CORREÇÃO ---
@@ -999,30 +1089,35 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             reply_markup=reply_markup
                         )
                     )
-                
+
                 cache_time = 30 # Padrão para busca normal
 
     except Exception as e:
         print(f"Erro ao processar lógica inline: {e}")
-        return 
+        return
 
     max_retries = 3
     for attempt in range(max_retries):
         try:
             # --- CORREÇÃO (v5.13): Removemos o next_offset daqui ---
             # A paginação agora é 100% manual pelos botões
-            await update.inline_query.answer(
-                results, 
-                cache_time=cache_time, 
+            
+            # --- MUDANÇA (v5.14) ---
+            # Aplicando safe_call aqui também para segurança, embora o
+            # erro 'NoneType' seja mais comum em callback_query.
+            await safe_call(update.inline_query, "answer",
+                results,
+                cache_time=cache_time,
                 is_personal=is_personal,
                 next_offset=None # <-- IMPORTANTE: Desliga o scroll infinito
             )
-            break 
+            # --- FIM DA MUDANÇA ---
+            break
         except NetworkError as e:
             print(f"Erro de rede ao enviar inline_query (tentativa {attempt + 1}/{max_retries}): {e}")
             if attempt + 1 == max_retries:
                 print("Falha ao enviar inline_query após 3 tentativas.")
-                return 
+                return
             await asyncio.sleep(1)
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
@@ -1031,13 +1126,13 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if update.message and not message_deletada:
             try: await update.message.delete()
             except Exception: pass
-            
+
         if not context.args: return
         movie_id = context.args[0]
         user_id = update.effective_user.id
-        
+
         chat_id_to_reply = update.effective_chat.id
-        
+
         if not await db.is_user_vip(user_id):
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1056,7 +1151,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         movie = await db.get_movie_by_id(movie_id)
-        
+
         if movie and movie.get('poster_url'):
             audio_buttons = []
             if movie.get('dubbed_file_id'):
@@ -1077,14 +1172,14 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
             keyboard = []
             reply_markup = None
-            
+
             if audio_buttons:
                 caption += "Selecione o áudio desejado abaixo:"
                 keyboard.append(audio_buttons)
                 reply_markup = InlineKeyboardMarkup(keyboard)
             else:
                 caption += "😔 *Este filme está no catálogo, mas ainda estamos aguardando os arquivos de vídeo.*"
-                
+
             await context.bot.send_photo(
                 chat_id=chat_id_to_reply,
                 photo=movie['poster_url'],
@@ -1103,7 +1198,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             del context.user_data['state']
             requested_title = update.message.text
             user_id = update.effective_user.id
-            
+
             if await db.add_request(user_id=user_id, title=requested_title):
                 await update.message.reply_text(
                     f"✅ Obrigado! Sua sugestão \"{requested_title}\" foi registrada e será analisada.\n\n"
