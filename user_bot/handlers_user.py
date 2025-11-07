@@ -1045,7 +1045,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         id=f"ep_{ep['id']}",
                                         title=f"Episódio : {ep['episode_number']}",
                                         description=f"🎬 {series_title} | {ep_title}",
-                                        thumbnail_url="https://www.themoviedb.org/t/p/w600_and_h900_bestv2/k42rlc5drUiSl9s8lqeM9dLjHQw.jpg",
+                                        thumbnail_url=poster_url_pequeno,
                                         reply_markup=reply_markup,
                                         input_message_content=InputTextMessageContent(
                                             message_text=message_text,
