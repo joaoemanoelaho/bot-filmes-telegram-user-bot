@@ -8,6 +8,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
+from telegram.request import AiohttpRequest  # <-- 1. IMPORTAMOS O MOTOR AIOHTTP
+
 import handlers_user as handlers
 from config import BOT_TOKEN
 
@@ -38,13 +40,23 @@ async def startup():
     # ---------------------
     
     try:
+        # --- INÍCIO DA MUDANÇA: TROCANDO PARA AIOHTTP ---
+
+        # 2. Criamos o objeto de request com os timeouts
+        request_motor = AiohttpRequest(
+            connect_timeout=30.0,
+            read_timeout=300.0,
+            write_timeout=300.0,
+            pool_timeout=30.0
+        )
+
+        # 3. Construímos o app passando o .request()
         application = Application.builder() \
             .token(BOT_TOKEN) \
-            .read_timeout(300.0) \
-            .connect_timeout(30.0) \
-            .write_timeout(300.0) \
-            .pool_timeout(30.0) \
+            .request(request_motor) \
             .build()
+            
+        # --- FIM DA MUDANÇA ---
         
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
@@ -60,7 +72,8 @@ async def startup():
         application.add_error_handler(error_handler)
         
         await application.initialize()
-        print("✅ Bot de USUÁRIO (webhook) inicializado!")
+        # 4. Mensagem de log alterada para confirmar a mudança
+        print("✅ Bot de USUÁRIO (webhook) inicializado com AIOHTTP!")
         
         # 4. Sinalize para os webhooks que o bot está pronto
         print("[DEBUG] Sinalizando APP_INITIALIZED.set()")
