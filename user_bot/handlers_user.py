@@ -892,7 +892,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     if details:
                         episode = details
                         season = details.get('seasons')
-                        series = season.get('series') if season else None
+                        series = await db.get_series_by_id(season['series_id']) if season else None
 
                         if season and series:
                             series_title = series.get('title', 'Série')
