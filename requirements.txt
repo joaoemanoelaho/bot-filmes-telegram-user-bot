@@ -11,5 +11,5 @@ tgcrypto
 python-dotenv
 flask
 hachoir
-aiohttp
+aiohttp[speedups]>=3.11
 ptbcontrib
