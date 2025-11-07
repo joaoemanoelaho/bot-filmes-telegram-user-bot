@@ -8,17 +8,17 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
 from telegram.ext import Application
-# O import do ptbcontrib está correto aqui
 from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
 from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
 
 import handlers_user as handlers
-from config import BOT_TOKEN
+# 1. Importa a nova variável PROXY_URL do config
+from config import BOT_TOKEN, PROXY_URL
 
 # --- DEBUG PRINT ---
-print("[DEBUG] Versão do código: 1.4 (com shutdown seguro e fallback HTTPX)")
+print("[DEBUG] Versão do código: 1.6 (Teste de Proxy via Config)")
 # ---------------------
 
 logging.basicConfig(
@@ -75,6 +75,16 @@ async def startup():
 
     print("[DEBUG] Função startup() iniciada.")
 
+    # --- INÍCIO DA LÓGICA DO PROXY (Simplificado) ---
+    # 2. Usa a variável PROXY_FULL_URL importada
+    final_proxy_url: str | None = PROXY_URL
+
+    if final_proxy_url:
+        print(f"✅ [PROXY] Usando proxy com a URL completa.")
+    else:
+        print("⚠️ [PROXY] Nenhuma PROXY_URL encontrada em config.py. Rodando sem proxy.")
+    # --- FIM DA LÓGICA DO PROXY ---
+
     try:
         # ---------------------------
         # Criação da sessão AIOHTTP
@@ -89,6 +99,7 @@ async def startup():
         request_motor = AiohttpRequest(
             client_timeout=timeout,
             connection_pool_size=256,
+            proxy_url=final_proxy_url  # <-- ADICIONADO PROXY AQUI
         )
 
         try:
@@ -111,7 +122,7 @@ async def startup():
                 read_timeout=300.0,
                 write_timeout=300.0,
                 pool_timeout=30.0,
-                connection_pool_size=256,
+                proxy_url=final_proxy_url  # <-- ADICIONADO PROXY AQUI
             )
             application = (
                 Application.builder()
@@ -263,4 +274,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
-    
