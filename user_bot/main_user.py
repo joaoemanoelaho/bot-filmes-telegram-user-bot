@@ -8,7 +8,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
-# <-- REMOVEMOS O IMPORT DO AIOHTTPREQUEST
+# --- INÍCIO DA MUDANÇA ---
+# Este é o import correto que você encontrou!
+from ptbcontrib.aiohttp_request import AiohttpRequest
+# --- FIM DA MUDANÇA ---
 
 import handlers_user as handlers
 from config import BOT_TOKEN
@@ -40,18 +43,27 @@ async def startup():
     # ---------------------
     
     try:
-        # --- INÍCIO DA CORREÇÃO ---
-        # Voltamos ao ApplicationBuilder original, que usa httpx
-        # Os timeouts de 300s já estavam corretos aqui.
+        # --- INÍCIO DA MUDANÇA: TROCANDO PARA AIOHTTP ---
+
+        # 2. Criamos o objeto de request com os timeouts
+        # Usamos os mesmos timeouts longos que já tínhamos
+        request_motor = AiohttpRequest(
+            connect_timeout=30.0,
+            read_timeout=300.0,
+            write_timeout=300.0,
+            pool_timeout=30.0,
+            connection_pool_size=256 # Como no exemplo que você achou
+        )
+
+        # 3. Construímos o app passando o .request()
+        # A v20+ da PTB usa o mesmo request para tudo (diferente do exemplo v13)
         application = Application.builder() \
             .token(BOT_TOKEN) \
-            .read_timeout(300.0) \
-            .connect_timeout(30.0) \
-            .write_timeout(300.0) \
-            .pool_timeout(30.0) \
+            .request(request_motor) \
             .build()
-        # --- FIM DA CORREÇÃO ---
             
+        # --- FIM DA MUDANÇA ---
+        
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
         application.add_handler(handlers.inline_search_handler)
@@ -66,8 +78,8 @@ async def startup():
         application.add_error_handler(error_handler)
         
         await application.initialize()
-        # 4. Mensagem de log de volta ao original
-        print("✅ Bot de USUÁRIO (webhook) inicializado!")
+        # 4. Mensagem de log alterada para confirmar a mudança
+        print("✅ Bot de USUÁRIO (webhook) inicializado com AIOHTTP!")
         
         # 4. Sinalize para os webhooks que o bot está pronto
         print("[DEBUG] Sinalizando APP_INITIALIZED.set()")
@@ -175,4 +187,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
-    
