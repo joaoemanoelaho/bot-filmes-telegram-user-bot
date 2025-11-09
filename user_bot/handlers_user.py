@@ -731,7 +731,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                 if status == "paid":
                     # O Webhook falhou, mas o pagamento está OK. Libera manualmente.
-                    await db.set_user_as_vip(user_id, duration_days=30)
+                    await db.set_user_as_vip(user_id, duration_days=7) # VIP por 7 dias
                     await db.clear_user_active_payment_id(user_id)
                     print(f"✅ VIP ATIVADO (via verificação manual) para UserID: {user_id}")
                     await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
@@ -784,19 +784,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 # --- FIM DO NOVO TEXTO ---
 
-                # Botão de voltar, pois não precisa mais de "Já Paguei"
-                keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
                 # --- MUDANÇA ---
                 # Esta lógica é mais segura do que a sua anterior
                 await safe_call(query.message, "delete")
                 # --- FIM DA MUDANÇA ---
 
-                await context.bot.send_photo(
+                msg_qrcode = await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
-                    parse_mode="Markdown", reply_markup=reply_markup
+                    parse_mode="Markdown", reply_markup=None
                 )
+                
+
+                qr_message_id = msg_qrcode.message_id
+                await db.set_user_active_payment_id(user_id, payment_id, qr_message_id)
             else:
                 # --- MUDANÇA ---
                 await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")

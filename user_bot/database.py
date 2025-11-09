@@ -75,12 +75,12 @@ async def get_user_details(user_id: int):
         print(f"Erro ao buscar detalhes do usuário: {e}")
         return None
     
-async def set_user_active_payment_id(user_id: int, payment_id: str):
+async def set_user_active_payment_id(user_id: int, payment_id: str, qr_message_id: int):
     """Salva o ID do pagamento ativo para um usuário."""
     if not supabase: return
     try:
         await asyncio.to_thread(
-            supabase.table('users').update({'active_payment_id': payment_id}).eq('user_id', user_id).execute
+            supabase.table('users').update({'active_payment_id': payment_id, "qr_message_id": qr_message_id}).eq('user_id', user_id).execute
         )
     except Exception as e:
         print(f"Erro ao salvar active_payment_id: {e}")
@@ -90,7 +90,7 @@ async def clear_user_active_payment_id(user_id: int):
     if not supabase: return
     try:
         await asyncio.to_thread(
-            supabase.table('users').update({'active_payment_id': None}).eq('user_id', user_id).execute
+            supabase.table('users').update({'active_payment_id': None, 'qr_message_id': None}).eq('user_id', user_id).execute
         )
     except Exception as e:
         print(f"Erro ao limpar active_payment_id: {e}")

@@ -180,8 +180,21 @@ async def pushinpay_webhook(request: Request) -> Response:
     
     if payment_status == "paid":
         try:
+            try:
+                # 1. Busca os detalhes do usuário para achar o ID da mensagem
+                user_data = await db.get_user_details(user_id)
+                qr_msg_id = user_data.get('qr_message_id') if user_data else None
+
+                # 2. Se tiver um ID salvo, tenta apagar
+                if qr_msg_id:
+                    await application.bot.delete_message(chat_id=user_id, message_id=qr_msg_id)
+                    print(f"🗑️ QR Code antigo (msg {qr_msg_id}) apagado para UserID {user_id}")
+            except Exception as e_del:
+                # Se falhar ao apagar (msg muito antiga, já apagada, etc), só ignora e segue.
+                print(f"⚠️ Não foi possível apagar QR code antigo: {e_del}")
+                
             if not await db.is_user_vip(user_id):
-                await db.set_user_as_vip(user_id, duration_days=30)
+                await db.set_user_as_vip(user_id, duration_days=7) # Ativa VIP por 7 dias
                 await db.clear_user_active_payment_id(user_id)
                 print(f"✅ VIP ATIVADO para UserID: {user_id}")
                 
