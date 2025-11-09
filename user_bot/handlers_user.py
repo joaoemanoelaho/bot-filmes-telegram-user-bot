@@ -764,7 +764,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             if payment_data and payment_data.get("qr_code_base64"):
                 payment_id = payment_data['payment_id']
-                await db.set_user_active_payment_id(user_id, payment_id)
                 base64_string = payment_data['qr_code_base64']
                 if ',' in base64_string:
                     base64_string = base64_string.split(',')[1]
