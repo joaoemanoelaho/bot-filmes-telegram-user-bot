@@ -138,39 +138,53 @@ async def telegram_webhook(request: Request) -> Response:
 # ==========================================================
 async def pushinpay_webhook(request: Request) -> Response:
     await APP_INITIALIZED.wait()
-
-    print(f"[Webhook PushinPay DEBUG] Raw Body: {(await request.body()).decode('utf-8', errors='ignore')}")
     
-    # 1. Captura e validação do User ID (mais robusta)
-    # Aceita qualquer coisa da URL e tenta limpar antes de converter
+    # --- DEBUG: Print do corpo bruto da requisição ---
+    try:
+        raw_body = await request.body()
+        print(f"[Webhook PushinPay DEBUG] Raw Body: {raw_body.decode('utf-8', errors='ignore')}")
+    except Exception as e_debug:
+        print(f"[Webhook PushinPay DEBUG] Falha ao ler raw body: {e_debug}")
+    # -------------------------------------------------
+
+    # 1. Captura e validação do User ID
     raw_user_id = request.path_params.get('user_id')
     try:
-        # Converte para string primeiro, remove espaços em branco e então para int
         user_id = int(str(raw_user_id).strip())
     except (ValueError, TypeError):
         print(f"[Webhook PushinPay] ❌ ERRO FATAL: ID inválido recebido na URL: '{raw_user_id}'")
         return JSONResponse({"status": "error", "message": "Invalid user_id format"}, status_code=400)
 
-    # 2. Leitura do corpo da requisição (JSON)
+    # 2. Leitura do corpo da requisição (TENTA JSON, DEPOIS FORM)
+    data = None
     try:
+        # Tenta ler como JSON (vai falhar neste caso)
         data = await request.json()
     except json.JSONDecodeError:
-        print(f"[Webhook PushinPay] ❌ ERRO: Corpo da requisição não é um JSON válido (UserID: {user_id})")
-        return JSONResponse({"status": "received_but_invalid_json"})
+        # Se falhar, tenta ler como FORM (o formato correto que recebemos)
+        print(f"[Webhook PushinPay] ℹ️ JSON falhou, tentando ler como FORM... (UserID: {user_id})")
+        try:
+            form_data = await request.form()
+            data = dict(form_data) # Converte para um dicionário normal
+        except Exception as e_form:
+            print(f"[Webhook PushinPay] ❌ ERRO CRÍTICO: Nem JSON nem FORM. Erro: {e_form}")
+            return JSONResponse({"status": "received_but_invalid_format"})
 
-    # 3. Processamento do status
+    if not data:
+         print(f"[Webhook PushinPay] ❌ ERRO: Corpo vazio.")
+         return JSONResponse({"status": "received_but_empty"})
+
+    # 3. Processamento do status (agora 'data' deve ter os dados corretos)
     payment_status = data.get("status")
-    print(f"[Webhook PushinPay] 🔔 Recebido para UserID: {user_id} | Status: {payment_status}")
+    print(f"[Webhook PushinPay] 🔔 UserID: {user_id} | Status: {payment_status}")
     
     if payment_status == "paid":
         try:
-            # Verifica se já é VIP para evitar duplicidade
             if not await db.is_user_vip(user_id):
                 await db.set_user_as_vip(user_id, duration_days=30)
                 await db.clear_user_active_payment_id(user_id)
                 print(f"✅ VIP ATIVADO para UserID: {user_id}")
                 
-                # Tenta notificar o usuário (não quebra se falhar)
                 try:
                     await application.bot.send_message(
                         chat_id=user_id,
@@ -178,13 +192,12 @@ async def pushinpay_webhook(request: Request) -> Response:
                         parse_mode="Markdown"
                     )
                 except Exception as e_msg:
-                     print(f"⚠️ Não foi possível enviar msg de confirmação para {user_id}: {e_msg}")
+                     print(f"⚠️ Erro ao notificar UserID {user_id}: {e_msg}")
             else:
-                 print(f"ℹ️ UserID {user_id} já era VIP. Apenas limpando pendências.")
+                 print(f"ℹ️ UserID {user_id} já era VIP.")
                  await db.clear_user_active_payment_id(user_id)
-                 
         except Exception as e_db:
-            print(f"❌ ERRO AO SALVAR VIP NO BANCO para {user_id}: {e_db}")
+            print(f"❌ ERRO AO SALVAR VIP: {e_db}")
             return JSONResponse({"status": "error", "message": "Database error"}, status_code=500)
 
     return JSONResponse({"status": "received"})
