@@ -1,5 +1,5 @@
 #
-# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.13 - COM PROTEÇÃO SAFECALL)
+# NOME DO ARQUIVO: handlers_user.py (VERSÃO 5.14 - WEBHOOK FINAL)
 #
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -37,11 +37,11 @@ DB_SEMAPHORE = asyncio.Semaphore(20)
 def safe_call(obj, method_name, *args, **kwargs):
     """Evita crash caso o objeto ou método estejam ausentes."""
     if not obj:
-        print(f"[WARN] safe_call ignorado: {method_name} chamado com None")
+        # print(f"[WARN] safe_call ignorado: {method_name} chamado com None")
         return None
     method = getattr(obj, method_name, None)
     if not method:
-        print(f"[WARN] safe_call ignorado: {method_name} inexistente em {type(obj)}")
+        # print(f"[WARN] safe_call ignorado: {method_name} inexistente em {type(obj)}")
         return None
     try:
         # Verifica se é um método assíncrono
@@ -364,7 +364,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 print(f"Erro ao editar de volta ao menu: {e}.")
                 await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=main_menu, parse_mode='HTML')
                 if message_to_reply:
-                    await message_to_reply.delete()
+                    try:
+                        await message_to_reply.delete()
+                    except: pass
         else:
             await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
 
@@ -723,22 +725,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             active_payment_id = user_details.get('active_payment_id') if user_details else None
 
             if active_payment_id:
-                # --- MUDANÇA ---
-                await safe_call(query, "edit_message_text", text="⏳ Verificando seu pagamento anterior, aguarde...")
-                # --- FIM DA MUDANÇA ---
-                status = await payments.check_payment_status(active_payment_id)
-                if status == 'created':
-                    # --- MUDANÇA ---
-                    await safe_call(query, "edit_message_text", text="Você já possui uma cobrança PIX pendente. Por favor, realize o pagamento ou aguarde expirar.")
-                    # --- FIM DA MUDANÇA ---
-                    return
+                # --- MUDANÇA PARA WEBHOOK: Não fazemos polling. Apenas avisamos. ---
+                await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
+                return
 
             context.user_data['last_pix_request'] = time.time()
 
             # --- MUDANÇA ---
             await safe_call(query, "edit_message_text", text="⏳ Gerando sua cobrança PIX, aguarde...")
             # --- FIM DA MUDANÇA ---
-            vip_price = 4.00
+            vip_price = 0.50  # Preço do VIP
 
             payment_data = await payments.create_pix_payment(user_id=user_id, amount=vip_price)
 
@@ -751,16 +747,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 qr_image_data = base64.b64decode(base64_string)
                 qr_image_file = io.BytesIO(qr_image_data)
                 pix_code = payment_data['qr_code_text']
+                
+                # --- NOVO TEXTO PARA WEBHOOK ---
                 caption = (
                     f"🍿 **Seu Acesso Pipoca Premium está quase pronto!** ✨\n\n"
                     f"Para concluir, faça o pagamento de R${vip_price:.2f} via PIX.\n\n"
                     f"**1.** Escaneie o QR Code acima.\n"
                     f"**2.** Ou use o PIX Copia e Cola abaixo:\n"
                     f"`{pix_code}`\n\n"
-                    "Após pagar, clique no botão 'Já Paguei' para verificar.\n\n"
+                    "✅ **Seu acesso será liberado AUTOMATICAMENTE** assim que o pagamento for confirmado pelo banco.\n\n"
                     "⚠️ *Este código expira em alguns minutos.*"
                 )
-                keyboard = [[InlineKeyboardButton("✅ Já Paguei", callback_data=f"check_payment_{payment_id}")]]
+                # --- FIM DO NOVO TEXTO ---
+
+                # Botão de voltar, pois não precisa mais de "Já Paguei"
+                keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
                 # --- MUDANÇA ---
@@ -777,45 +778,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
                 # --- FIM DA MUDANÇA ---
 
-    elif callback_data.startswith("check_payment_"):
-        async with DB_SEMAPHORE:
-            payment_id = callback_data.split('_')[2]
-            now = time.time()
-            last_check = context.user_data.get('last_payment_check', 0)
-            if now - last_check < 60:
-                # --- MUDANÇA ---
-                await safe_call(query, "answer",
-                    text=f"✋ Por favor, aguarde {int(60 - (now - last_check))}s antes de verificar novamente.",
-                    show_alert=True
-                )
-                # --- FIM DA MUDANÇA ---
-                return
-            context.user_data['last_payment_check'] = now
-
-            status = await payments.check_payment_status(payment_id)
-
-            if status == 'paid':
-                # --- MUDANÇA ---
-                await safe_call(query, "answer")
-                # --- FIM DA MUDANÇA ---
-                await db.set_user_as_vip(user_id, duration_days=30)
-                await db.clear_user_active_payment_id(user_id)
-                # --- MUDANÇA ---
-                await safe_call(query.message, "delete")
-                # --- FIM DA MUDANÇA ---
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text="🎉 **Pagamento confirmado!** 🎉\n\n"
-                         "Você agora é um membro Premium! Aproveite todo o nosso catálogo.",
-                    parse_mode="Markdown"
-                )
-            else:
-                # --- MUDANÇA ---
-                await safe_call(query, "answer",
-                    text=" Pagamento ainda não confirmado.\n\nA confirmação pode levar alguns instantes.",
-                    show_alert=True
-                )
-                # --- FIM DA MUDANÇA ---
+    # --- REMOVIDO O BLOCO 'check_payment_' POIS AGORA É WEBHOOK ---
 
     elif callback_data.startswith("ep_nav_"):
         # (Função da v5.10 - COM MUDANÇAS)
@@ -855,9 +818,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await placeholder_msg.edit_text(message_text)
 
 # =================================================================
-# === INLINE QUERY HANDLER (COM CORREÇÃO v5.12) ===
-# =================================================================
-# =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -887,8 +847,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     # Usamos a função de details para pegar tudo
                     details = await db.get_full_episode_details(episode_id)
 
-                    
-                    
                     if details:
                         episode = details
                         season = details.get('seasons')

@@ -2,10 +2,11 @@ import sys
 import os
 import logging
 import asyncio
+import json # <-- IMPORT NOVO PARA O WEBHOOK
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse # <-- JSONResponse ADICIONADO
 from telegram import Update
 from telegram.ext import Application
 from ptbcontrib.aiohttp_request import AiohttpRequest
@@ -14,11 +15,12 @@ from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
 
 import handlers_user as handlers
+import database as db # <-- IMPORT DO BANCO DE DADOS PARA O VIP
 # 1. Importa a nova variável PROXY_URL do config
-from config import BOT_TOKEN, PROXY_URL
+from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH
 
 # --- DEBUG PRINT ---
-print("[DEBUG] Versão do código: 1.6 (Teste de Proxy via Config)")
+print("[DEBUG] Versão do código: 1.7 (Com Webhook PushinPay Final)")
 # ---------------------
 
 logging.basicConfig(
@@ -148,6 +150,13 @@ async def startup():
         application.add_error_handler(error_handler)
 
         await application.initialize()
+        
+        # --- CONFIGURAÇÃO DO WEBHOOK DO TELEGRAM ---
+        # Garante que o webhook do Telegram esteja setado corretamente na inicialização
+        webhook_url = f"{WEBHOOK_DOMAIN}{TELEGRAM_WEBHOOK_PATH}"
+        print(f"ℹ️ Configurando webhook do Telegram para: {webhook_url}")
+        await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+        
         print("✅ Bot inicializado com sucesso (webhook pronto).")
 
         APP_INITIALIZED.set()
@@ -171,6 +180,8 @@ async def shutdown():
 
     try:
         if application:
+            # Tenta deletar o webhook ao desligar (opcional, mas boa prática)
+            # await application.bot.delete_webhook()
             await application.shutdown()
             await application.stop()
             print("✅ Application encerrada com sucesso.")
@@ -191,21 +202,21 @@ async def shutdown():
 # 📩 TELEGRAM WEBHOOK
 # ==========================================================
 async def telegram_webhook(request: Request) -> Response:
-    print("[DEBUG] /webhook recebido. Aguardando APP_INITIALIZED...")
+    # print("[DEBUG] /webhook recebido. Aguardando APP_INITIALIZED...")
     await APP_INITIALIZED.wait()
-    print("[DEBUG] APP_INITIALIZED set. Processando update...")
+    # print("[DEBUG] APP_INITIALIZED set. Processando update...")
 
     try:
         data = await request.json()
-        print(f"📨 Update recebido: {data}")
+        # print(f"📨 Update recebido: {data}")
 
         if not isinstance(data, dict) or "update_id" not in data:
-            print("⚠️ Dados inválidos recebidos no webhook.")
+            print("⚠️ Dados inválidos recebidos no webhook do Telegram.")
             return Response("ok", status_code=200)
 
         update = Update.de_json(data, application.bot)
         asyncio.create_task(application.process_update(update))
-        print(f"✅ Update processado: {data.get('update_id')}")
+        # print(f"✅ Update processado: {data.get('update_id')}")
 
     except Exception as e:
         print(f"❌ Erro ao processar webhook do Telegram: {e}")
@@ -219,9 +230,9 @@ async def telegram_webhook(request: Request) -> Response:
 # 🔔 SUPABASE WEBHOOK
 # ==========================================================
 async def supabase_webhook(request: Request) -> Response:
-    print("[DEBUG] /webhook/supabase recebido. Aguardando APP_INITIALIZED...")
+    # print("[DEBUG] /webhook/supabase recebido. Aguardando APP_INITIALIZED...")
     await APP_INITIALIZED.wait()
-    print("[DEBUG] APP_INITIALIZED set. Processando Supabase...")
+    # print("[DEBUG] APP_INITIALIZED set. Processando Supabase...")
 
     try:
         data = await request.json()
@@ -239,12 +250,85 @@ async def supabase_webhook(request: Request) -> Response:
                 message = f"😔 O pedido '{title}' não pôde ser adicionado no momento."
 
             if message:
-                await application.bot.send_message(chat_id=user_id, text=message)
+                # Usa safe_call ou try/except para evitar crash se o usuário bloqueou o bot
+                try:
+                    await application.bot.send_message(chat_id=user_id, text=message)
+                except Exception as e:
+                    print(f"Erro ao notificar usuário {user_id} sobre pedido: {e}")
 
         return Response(status_code=200)
     except Exception as e:
         print(f"Erro ao processar webhook do Supabase: {e}")
         return Response(status_code=500)
+
+# =================================================================
+# === 💸 NOVO: WEBHOOK HANDLER DO PUSHINPAY ===
+# =================================================================
+async def pushinpay_webhook(request: Request) -> Response:
+    """
+    Este endpoint recebe a notificação de pagamento da PushinPay.
+    URL esperada: /webhook/pushinpay/{user_id}
+    """
+    # Aguarda o bot estar pronto para podermos usar 'application.bot'
+    await APP_INITIALIZED.wait()
+    
+    try:
+        # 1. Pega o ID do usuário da URL (vem como string, convertemos para int)
+        user_id_str = request.path_params.get('user_id')
+        if not user_id_str:
+             print("[Webhook PushinPay] ERRO: user_id não encontrado na URL.")
+             return JSONResponse({"status": "error", "message": "Missing user_id"}, status_code=400)
+        user_id = int(user_id_str)
+        
+        # 2. Pega os dados do pagamento do corpo da requisição
+        data = await request.json()
+        payment_status = data.get("status")
+        
+        print(f"[Webhook PushinPay] Recebido para UserID: {user_id}. Status: {payment_status}")
+        
+        # 3. Se o status for 'paid', libera o VIP
+        if payment_status == "paid":
+            # Verifica se já é VIP para não enviar mensagem duplicada ou estender sem querer
+            # (Opcional: você pode querer permitir estender. Se sim, remova este 'if')
+            if not await db.is_user_vip(user_id):
+                # Ativa VIP por 30 dias
+                await db.set_user_as_vip(user_id, duration_days=30)
+                # Limpa o ID de pagamento pendente para permitir gerar outro no futuro
+                await db.clear_user_active_payment_id(user_id)
+                
+                print(f"✅ [Webhook PushinPay] VIP ATIVADO para UserID: {user_id}")
+                
+                # Notifica o usuário pelo Telegram
+                try:
+                    await application.bot.send_message(
+                        chat_id=user_id,
+                        text="🎉 **Pagamento confirmado!** 🎉\n\n"
+                             "Seu **Acesso Pipoca Premium** foi ativado com sucesso!\n"
+                             "Aproveite todo o nosso catálogo sem limites. 🍿",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    print(f"⚠️ [Webhook PushinPay] Erro ao notificar UserID {user_id} (pode ter bloqueado o bot): {e}")
+            else:
+                 print(f"ℹ️ [Webhook PushinPay] UserID {user_id} já era VIP. Ignorando ativação duplicada.")
+                 # Mesmo já sendo VIP, limpa o pagamento pendente para não travar
+                 await db.clear_user_active_payment_id(user_id)
+        
+        # Responde 200 OK para a PushinPay saber que recebemos corretamente
+        return JSONResponse({"status": "received"})
+    
+    except ValueError:
+        print(f"[Webhook PushinPay] ERRO: user_id inválido na URL. Valor recebido: {request.path_params.get('user_id')}")
+        return JSONResponse({"status": "error", "message": "Invalid user_id format"}, status_code=400)
+    except json.JSONDecodeError:
+        print("[Webhook PushinPay] ERRO: Corpo da requisição não é um JSON válido.")
+        return JSONResponse({"status": "error", "message": "Invalid JSON body"}, status_code=400)
+    except Exception as e:
+        print(f"❌ ERRO GRAVE NO WEBHOOK PUSHINPAY: {e}")
+        import traceback
+        traceback.print_exc()
+        # Retorna erro 500 para a PushinPay tentar enviar novamente depois (se eles tiverem mecanismo de retry)
+        return JSONResponse({"status": "error", "message": "Internal server error"}, status_code=500)
 
 
 # ==========================================================
@@ -257,9 +341,15 @@ async def health_check(request: Request) -> Response:
 # ==========================================================
 # 🛠️ ROTAS E APP
 # ==========================================================
+# Define as rotas. IMPORTANTE: certifique-se que TELEGRAM_WEBHOOK_PATH
+# em config.py corresponde a "/webhook" (ou o que você usar aqui).
 routes = [
     Route("/webhook", endpoint=telegram_webhook, methods=["POST"]),
     Route("/webhook/supabase", endpoint=supabase_webhook, methods=["POST"]),
+    # --- ROTA NOVA PUSHINPAY ---
+    # O trecho {user_id:int} diz ao Starlette que essa parte da URL é uma variável numérica
+    Route("/webhook/pushinpay/{user_id:int}", endpoint=pushinpay_webhook, methods=["POST"]),
+    # ---------------------------
     Route("/health", endpoint=health_check, methods=["GET"]),
 ]
 
@@ -267,11 +357,17 @@ app = Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
 
 
 # ==========================================================
-# ▶️ MAIN (LOCAL)
+# ▶️ MAIN (LOCAL & CLOUD)
 # ==========================================================
 if __name__ == "__main__":
     import uvicorn
 
+    # Pega a porta da variável de ambiente PORT (padrão em nuvens como Render/Heroku/SquareCloud)
+    # Se não tiver, usa 8000 como padrão para testes locais.
     port = int(os.environ.get("PORT", 8000))
-    print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
+    print(f"[WEB] Servidor iniciando na porta {port}...")
+    
+    # Inicia o servidor Uvicorn
+    # host="0.0.0.0" é essencial para que o servidor seja acessível externamente na nuvem
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
