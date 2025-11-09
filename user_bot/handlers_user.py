@@ -725,9 +725,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             active_payment_id = user_details.get('active_payment_id') if user_details else None
 
             if active_payment_id:
-                # --- MUDANÇA PARA WEBHOOK: Não fazemos polling. Apenas avisamos. ---
-                await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
-                return
+                # Um ID está preso. Vamos verificar o status UMA VEZ.
+                await safe_call(query, "edit_message_text", text="⏳ Verificando pagamento pendente...")
+                status = await payments.check_payment_status(active_payment_id)
+
+                if status == "paid":
+                    # O Webhook falhou, mas o pagamento está OK. Libera manualmente.
+                    await db.set_user_as_vip(user_id, duration_days=30)
+                    await db.clear_user_active_payment_id(user_id)
+                    print(f"✅ VIP ATIVADO (via verificação manual) para UserID: {user_id}")
+                    await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
+                    return
+                
+                elif status == "created":
+                    # O PIX ainda está pendente. Agora sim, mostramos o erro da sua imagem.
+                    await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
+                    return
+
+                elif status in ["expired", "canceled", "not_found"]:
+                    # O PIX expirou ou falhou. Limpa o ID e deixa gerar um novo.
+                    print(f"PIX {active_payment_id} expirado/cancelado. Limpando...")
+                    await db.clear_user_active_payment_id(user_id)
+                    # Deixa o código continuar para gerar um novo PIX
+                
+                else:
+                    # Erro na API ou status desconhecido
+                    await safe_call(query, "edit_message_text", text="😕 Erro ao verificar seu pagamento anterior. Tente novamente em 1 minuto.")
+                    return
 
             context.user_data['last_pix_request'] = time.time()
 

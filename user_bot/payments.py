@@ -49,4 +49,26 @@ async def create_pix_payment(user_id: int, amount: float) -> dict | None:
         print(f"Erro inesperado ao criar PIX: {e}")
         return None
 
+async def check_payment_status(payment_id: str) -> str | None:
+    """
+    Verifica o status de um pagamento no PushinPay.
+    Retorna a string do status ('created', 'paid', 'expired', 'canceled') ou None.
+    """
+    url = f"{CONSULT_PIX_URL}/{payment_id}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, headers=HEADERS)
+            
+            if response.status_code == 404:
+                print(f"[Check PIX] Pagamento {payment_id} não encontrado (404).")
+                return "not_found" # Expirou e foi deletado
+                
+            response.raise_for_status()
+            data = response.json()
+            # Retorna 'created', 'paid', 'canceled', etc.
+            return data.get("status") 
+            
+    except Exception as e:
+        print(f"Erro ao consultar PIX {payment_id}: {e}")
+        return None
 # OBS: A função 'check_payment_status' foi removida pois não é mais necessária com Webhooks.
