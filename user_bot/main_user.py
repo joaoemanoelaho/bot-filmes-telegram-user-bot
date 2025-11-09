@@ -33,21 +33,23 @@ APP_INITIALIZED = asyncio.Event()
 session: aiohttp.ClientSession | None = None
 
 # ==========================================================
-# 🔁 ERROR HANDLER
+# 🔁 ERROR HANDLER (CORRIGIDO - SEM LOOP INFINITO)
 # ==========================================================
 async def error_handler(update: object, context):
     e = context.error
     print(f"[DEBUG] ERROR_HANDLER ATIVADO! Erro: {e}")
+
+    # --- INÍCIO DA CORREÇÃO ---
+    # Agora, tratamos erros de rede da mesma forma que outros erros:
+    # apenas registramos.
     if isinstance(e, (NetworkError, aiohttp.ClientError)):
-        print(f"⚠️ NetworkError detectado ({type(e).__name__}) — tentando novamente em 3s...")
-        await asyncio.sleep(3)
-        if update and isinstance(update, Update):
-            try:
-                # print(f"🔄 Tentando re-processar update: {update.update_id}")
-                await context.application.process_update(update)
-            except Exception as retry_err:
-                print(f"❌ Falha no retry automático: {retry_err}")
+        print(f"❌ ERRO DE REDE (Captura Global): {e}")
+        print("O bot tentou 3 vezes (dentro do handler) e falhou. Desistindo deste update.")
+        # NÃO vamos re-processar o update, para evitar o loop infinito.
         return
+    # --- FIM DA CORREÇÃO ---
+
+    # Esta parte (para erros que não são de rede) continua igual
     print(f"❌ Erro não-rede no handler: {e}")
     import traceback
     traceback.print_exc()
