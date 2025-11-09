@@ -138,6 +138,8 @@ async def telegram_webhook(request: Request) -> Response:
 # ==========================================================
 async def pushinpay_webhook(request: Request) -> Response:
     await APP_INITIALIZED.wait()
+
+    print(f"[Webhook PushinPay DEBUG] Raw Body: {(await request.body()).decode('utf-8', errors='ignore')}")
     
     # 1. Captura e validação do User ID (mais robusta)
     # Aceita qualquer coisa da URL e tenta limpar antes de converter
@@ -227,4 +229,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Iniciando na porta {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
-    
