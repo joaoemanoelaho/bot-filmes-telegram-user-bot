@@ -34,7 +34,7 @@ sys.path.insert(0, parent_dir)
 # =================================================================
 DB_SEMAPHORE = asyncio.Semaphore(20)
 
-def safe_call(obj, method_name, *args, **kwargs):
+async def safe_call(obj, method_name, *args, **kwargs):
     """Evita crash caso o objeto ou método estejam ausentes."""
     if not obj:
         # print(f"[WARN] safe_call ignorado: {method_name} chamado com None")
@@ -47,7 +47,7 @@ def safe_call(obj, method_name, *args, **kwargs):
         # Verifica se é um método assíncrono
         if asyncio.iscoroutinefunction(method):
             # Se for, retorna a corrotina (deve ser chamada com await)
-            return method(*args, **kwargs)
+            return await method(*args, **kwargs)
         else:
             # Se for síncrono, chama diretamente
             return method(*args, **kwargs)
@@ -270,6 +270,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             elif payload.startswith("show_ep_"):
                 try:
                     episode_id = int(payload.split('_')[2])
+
+                    await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
 
                     # --- VERIFICAÇÃO DE VIP ---
                     if not await db.is_user_vip(user.id):
