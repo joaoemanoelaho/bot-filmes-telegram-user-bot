@@ -376,6 +376,9 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
     # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_id = update.effective_user.id
+
+        await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
+
         if not await db.is_user_vip(user_id):
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -540,6 +543,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif callback_data == "main_request":
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
+
+            await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
+
             if not await db.is_user_vip(user_id):
                 # --- MUDANÇA ---
                 await safe_call(query, "answer")
@@ -575,6 +581,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif callback_data == "main_top":
         async with DB_SEMAPHORE:
             user_id = query.from_user.id
+
+            await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
+
             if not await db.is_user_vip(user_id):
                 # --- MUDANÇA ---
                 await safe_call(query, "answer")
@@ -712,9 +721,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         async with DB_SEMAPHORE:
-            # --- MUDANÇA ---
             await safe_call(query, "answer")
-            # --- FIM DA MUDANÇA ---
+
+            await db.get_or_create_user(user_id=user_id, first_name=query.from_user.first_name)
+
             if await db.is_user_vip(user_id):
                 try:
                     # --- MUDANÇA ---
@@ -945,6 +955,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             # --- FIM DA CORREÇÃO ---
                 try:
                     user_id = update.inline_query.from_user.id
+                    await db.get_or_create_user(user_id=user_id, first_name=update.inline_query.from_user.first_name)
                     is_vip = await db.is_user_vip(user_id)
 
                     # --- CORREÇÃO (v5.13): Define o limite e chama com offset ---
@@ -1243,6 +1254,8 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         user_id = update.effective_user.id
 
         chat_id_to_reply = update.effective_chat.id
+
+        await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
         if not await db.is_user_vip(user_id):
             keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
