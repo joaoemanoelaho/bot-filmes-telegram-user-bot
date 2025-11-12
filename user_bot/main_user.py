@@ -86,6 +86,7 @@ async def startup():
         application.add_handler(handlers.cancel_command_handler)
         application.add_handler(handlers.help_command_handler)
         application.add_handler(handlers.request_command_handler)
+        application.add_handler(handlers.broadcast_handler)
         application.add_error_handler(error_handler)
 
         await application.initialize()

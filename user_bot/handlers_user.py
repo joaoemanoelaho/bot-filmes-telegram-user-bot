@@ -7,7 +7,7 @@ from telegram import (
     InlineQueryResultPhoto, InputMediaPhoto
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
-from telegram.error import NetworkError
+from telegram.error import NetworkError, Forbidden, FloodWait
 import database as db
 from config import ADMIN_IDS, STORAGE_CHANNEL_ID
 import payments
@@ -1314,10 +1314,97 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             await context.bot.send_message(chat_id=chat_id_to_reply, text="Filme não encontrado ou sem pôster disponível.")
 
+async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler para o comando /transmissao (APENAS ADMINS).
+    Prepara o bot para receber a mensagem de transmissão.
+    """
+    user_id = update.effective_user.id
+    
+    # 1. VERIFICA SE É ADMIN (usando sua lista importada de config.py)
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("Você não tem permissão para usar este comando.")
+        return
+
+    # 2. DEFINE O ESTADO
+    context.user_data['state'] = 'awaiting_broadcast_message'
+    await update.message.reply_text(
+        "📣 **Modo de Transmissão** 📣\n\n"
+        "Envie a mensagem que você deseja enviar para TODOS os usuários ativos.\n\n"
+        "A mensagem pode conter formatação Markdown (ex: *negrito*, `código`).\n\n"
+        "Para cancelar, digite /cancelar."
+    )
+
+async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_text: str):
+    """
+    Esta é a função que realmente faz o trabalho pesado,
+    com pausas e tratamento de erros.
+    """
+    bot = context.bot
+    admin_id = ADMIN_IDS[0] # Pega o primeiro admin da sua lista
+    
+    # 1. Pega APENAS usuários ativos
+    active_users = await db.get_active_users()
+    if not active_users:
+        print("Broadcast cancelado: Nenhum usuário ativo encontrado.")
+        await bot.send_message(chat_id=admin_id, text="📣 Transmissão cancelada: Nenhum usuário ativo encontrado.")
+        return
+
+    print(f"Iniciando broadcast de '{message_text[:20]}...' para {len(active_users)} usuários.")
+    
+    sucesso = 0
+    falha_bloqueio = 0
+    falha_outros = 0
+
+    for user in active_users:
+        user_id = user['user_id']
+        
+        try:
+            # Tenta enviar a mensagem
+            await bot.send_message(chat_id=user_id, text=message_text, parse_mode="Markdown")
+            sucesso += 1
+            
+            # A PAUSA SEGURA (6 segundos = 10 usuários/min)
+            await asyncio.sleep(6)
+
+        except Forbidden as e:
+            # Usuário bloqueou o bot ou desativou a conta
+            if "bot was blocked" in str(e) or "user is deactivated" in str(e):
+                await db.set_user_inactive(user_id) # Desativa no banco
+                falha_bloqueio += 1
+            else:
+                print(f"Erro Forbidden (não-bloqueio) para {user_id}: {e}")
+                falha_outros += 1
+
+        except FloodWait as e:
+            # O Telegram pediu para esperar
+            print(f"FloodWait... esperando {e.retry_after} segundos.")
+            await asyncio.sleep(e.retry_after + 1) # Espera o tempo pedido + 1s
+
+        except Exception as e:
+            # Outro erro qualquer
+            print(f"Erro genérico ao enviar para {user_id}: {e}")
+            falha_outros += 1
+    
+    # Avisa o Admin que terminou
+    print("Broadcast concluído!")
+    await bot.send_message(
+        chat_id=admin_id, 
+        text=(
+            f"📣 **Transmissão Concluída!**\n\n"
+            f"✅ Enviado com sucesso: {sucesso}\n"
+            f"🚫 Bloqueios/Desativados: {falha_bloqueio}\n"
+            f"❌ Falhas (outras): {falha_outros}\n\n"
+            f"Total de usuários (início): {len(active_users)}"
+        ),
+        parse_mode="Markdown"
+    )
+
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
     async with DB_SEMAPHORE:
         user_state = context.user_data.get('state')
+        
         if user_state == 'awaiting_request':
             del context.user_data['state']
             requested_title = update.message.text
@@ -1330,6 +1417,22 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             else:
                 await update.message.reply_text("😕 Desculpe, ocorreu um erro ao salvar seu pedido. Tente novamente mais tarde.")
+
+        elif user_state == 'awaiting_broadcast_message':
+            del context.user_data['state']
+            user_id = update.effective_user.id
+            
+            # Checagem dupla de admin, por segurança
+            if user_id not in ADMIN_IDS:
+                return
+
+            # Pega a mensagem exata que o admin enviou
+            message_to_send = update.message.text
+            await update.message.reply_text(
+                f"✅ Mensagem recebida. Iniciando a transmissão em segundo plano...\n\n"
+                "Você será notificado quando terminar. Isso pode demorar bastante."
+            )
+            asyncio.create_task(iniciar_broadcast_real(context, message_to_send))
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
@@ -1364,3 +1467,4 @@ text_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_hand
 cancel_command_handler = CommandHandler("cancelar", cancel_handler)
 help_command_handler = CommandHandler("help", help_handler)
 request_command_handler = CommandHandler("pedir", request_command_handler)
+broadcast_handler = CommandHandler("transmissao", broadcast_command_handler)

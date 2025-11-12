@@ -30,6 +30,7 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
     """
     Verifica se um usuário existe no DB pelo seu ID.
     Se não existir, cria um novo registro.
+    Se existir mas estiver inativo, REATIVA O USUÁRIO.
     Retorna os dados do usuário.
     """
     if not supabase:
@@ -49,7 +50,7 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
                 supabase.table('users').insert({
                     'user_id': user_id,
                     'first_name': first_name
-                    # 'is_vip' já tem 'false' como padrão no banco de dados
+                    # 'is_active' será TRUE por padrão (definido no SQL)
                 }).execute
             )
             
@@ -59,9 +60,28 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
             print(f"Erro ao inserir novo usuário: {e}")
             return None
     
-    # Se o usuário já existe, retorna os dados dele
+    # Se o usuário já existe, verifica se está ativo
     print(f"Usuário {user_id} encontrado no banco de dados.")
-    return response.data[0]
+    user_data = response.data[0]
+    
+    # --- LÓGICA DE REATIVAÇÃO ---
+    # Se ele estava inativo (False), reativa ele (True)
+    # Usamos .get('is_active', True) para ser seguro caso a coluna ainda não exista (ela vai defaultar para True)
+    if not user_data.get('is_active', True):
+        print(f"Usuário {user_id} estava inativo. Reativando...")
+        try:
+            # Atualiza o status no banco para True
+            await asyncio.to_thread(
+                supabase.table('users').update({'is_active': True})
+                .eq('user_id', user_id).execute
+            )
+            # Atualiza o dict local que vamos retornar
+            user_data['is_active'] = True
+        except Exception as e:
+            print(f"Erro ao REATIVAR usuário {user_id}: {e}")
+    # --- FIM DA LÓGICA ---
+    
+    return user_data
 
 async def get_user_details(user_id: int):
     """Busca todos os detalhes de um usuário."""
@@ -460,4 +480,31 @@ async def get_neighbor_episode(season_id: int, current_episode_number: int, dire
             return None
         print(f"Erro ao buscar neighbor_episode (direction={direction}): {e}")
         return None
-# --- FIM DA CORREÇÃO ---
+
+async def set_user_inactive(user_id: int):
+    """Marca um usuário como inativo (ex: bloqueou o bot)."""
+    if not supabase: 
+        return
+    try:
+        await asyncio.to_thread(
+            supabase.table('users').update({'is_active': False})
+            .eq('user_id', user_id).execute
+        )
+        print(f"Usuário {user_id} marcado como INATIVO.")
+    except Exception as e:
+        print(f"Erro ao marcar usuário {user_id} como inativo: {e}")
+
+async def get_active_users() -> list[dict]:
+    """Retorna uma lista de user_ids de todos os usuários ATIVOS."""
+    if not supabase: 
+        return []
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('users').select('user_id')
+            .eq('is_active', True).execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar usuários ativos: {e}")
+        return []
+    
