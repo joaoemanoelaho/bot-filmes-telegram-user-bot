@@ -7,7 +7,7 @@ from telegram import (
     InlineQueryResultPhoto, InputMediaPhoto
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
-from telegram.error import NetworkError, Forbidden, FloodWait
+from telegram.error import NetworkError, Forbidden, RetryAfter
 import database as db
 from config import ADMIN_IDS, STORAGE_CHANNEL_ID
 import payments
@@ -1376,9 +1376,9 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_tex
                 print(f"Erro Forbidden (não-bloqueio) para {user_id}: {e}")
                 falha_outros += 1
 
-        except FloodWait as e:
+        except RetryAfter as e:
             # O Telegram pediu para esperar
-            print(f"FloodWait... esperando {e.retry_after} segundos.")
+            print(f"RetryAfter... esperando {e.retry_after} segundos.")
             await asyncio.sleep(e.retry_after + 1) # Espera o tempo pedido + 1s
 
         except Exception as e:
