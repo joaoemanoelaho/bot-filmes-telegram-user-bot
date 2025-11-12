@@ -264,7 +264,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 protect_content=True
                             )
                         except BadRequest as e:
-                            if "Wrong file_id" in str(e) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
+                            error_text = str(e).lower() # Normaliza o erro
+                            # Agora verifica as duas mensagens de erro:
+                            if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
                                 # PLANO B: O file_id está quebrado, mas temos o msg_id
                                 print(f"🚨 [Plano B] File ID quebrado para Ep {episode_id}. Iniciando Auto-Cura.")
                                 print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID_SERIES}")
@@ -531,7 +533,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     )
                     
                 except BadRequest as e:
-                    if "Wrong file_id" in str(e) and msg_id_to_copy and STORAGE_CHANNEL_ID:
+                    error_text = str(e).lower() # Normaliza o erro
+                    # Agora verifica as duas mensagens de erro:
+                    if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID:
                         # PLANO B: O file_id está quebrado, mas temos o msg_id
                         print(f"🚨 [Plano B] File ID quebrado para Filme {movie_id}. Iniciando Auto-Cura.")
                         print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID}")
