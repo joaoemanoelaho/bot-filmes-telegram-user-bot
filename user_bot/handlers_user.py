@@ -7,9 +7,9 @@ from telegram import (
     InlineQueryResultPhoto, InputMediaPhoto
 )
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, InlineQueryHandler, MessageHandler, filters
-from telegram.error import NetworkError, Forbidden, RetryAfter
+from telegram.error import NetworkError, Forbidden, RetryAfter, BadRequest
 import database as db
-from config import ADMIN_IDS, STORAGE_CHANNEL_ID
+from config import ADMIN_IDS, STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 import payments
 import base64
 import io
@@ -200,11 +200,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                     file_id_to_send = None
                     audio_text = "N/A"
+                    msg_id_to_copy = None
                     if audio_type == 'dub' and episode_data.get('dubbed_file_id'):
                         file_id_to_send = episode_data['dubbed_file_id']
+                        msg_id_to_copy = episode_data.get('dubbed_msg_id')
                         audio_text = "(Dublado)"
                     elif audio_type == 'sub' and episode_data.get('subtitled_file_id'):
                         file_id_to_send = episode_data['subtitled_file_id']
+                        msg_id_to_copy = episode_data.get('subtitled_msg_id')
                         audio_text = "(Legendado)"
 
                     if file_id_to_send:
@@ -249,14 +252,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             keyboard.append(nav_row)
                         video_reply_markup = InlineKeyboardMarkup(keyboard)
 
-                        await context.bot.send_video(
-                            chat_id=user.id,
-                            video=file_id_to_send,
-                            caption=video_caption,
-                            parse_mode="Markdown",
-                            reply_markup=video_reply_markup,
-                            protect_content=True
-                        )
+                        try:
+                            # PLANO A: Tenta enviar o file_id salvo
+                            print(f"[Plano A] Tentando enviar Ep {episode_id} com file_id: {file_id_to_send[:20]}...")
+                            await context.bot.send_video(
+                                chat_id=user.id,
+                                video=file_id_to_send,
+                                caption=video_caption,
+                                parse_mode="Markdown",
+                                reply_markup=video_reply_markup,
+                                protect_content=True
+                            )
+                        except BadRequest as e:
+                            if "Wrong file_id" in str(e) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
+                                # PLANO B: O file_id está quebrado, mas temos o msg_id
+                                print(f"🚨 [Plano B] File ID quebrado para Ep {episode_id}. Iniciando Auto-Cura.")
+                                print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID_SERIES}")
+                                
+                                try:
+                                    # 1. Copia a mensagem do canal de armazenamento (o bot PRECISA ser admin lá)
+                                    copied_message = await context.bot.copy_message(
+                                        chat_id=user.id,
+                                        from_chat_id=STORAGE_CHANNEL_ID_SERIES,
+                                        message_id=msg_id_to_copy,
+                                        protect_content=True # Protege a cópia
+                                    )
+                                    
+                                    # 2. Pega o NOVO file_id válido
+                                    new_file_id = copied_message.video.file_id
+                                    print(f"   ✅ Sucesso! Novo file_id: {new_file_id[:20]}...")
+                                    
+                                    # 3. Salva o novo file_id no banco para o futuro
+                                    await db.update_episode_file_id_only(episode_id, new_file_id, audio_type)
+                                    
+                                    # 4. Adiciona o caption e botões à mensagem copiada
+                                    await copied_message.edit_caption(
+                                        caption=video_caption,
+                                        parse_mode="Markdown",
+                                        reply_markup=video_reply_markup
+                                    )
+                                    
+                                except Exception as e_inner:
+                                    print(f"   ❌ FALHA no Plano B: {e_inner}")
+                                    await status_msg.edit_text("😔 Desculpe, o `file_id` deste episódio quebrou e não consegui repará-lo automaticamente. Avise um admin.")
+                            else:
+                                # O erro não é "Wrong file_id" ou não temos msg_id para copiar
+                                print(f"Erro (sem Plano B): {e}")
+                                await status_msg.edit_text(f"😔 Ocorreu um erro inesperado ao enviar o vídeo: {e}")
+                        except Exception as e:
+                             print(f"Erro geral ao enviar vídeo: {e}")
+                             await status_msg.edit_text(f"😔 Ocorreu um erro geral ao enviar o vídeo: {e}")
+                        # --- FIM DA MUDANÇA (v6.0) ---
+
                         await status_msg.delete()
                     else:
                         await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
@@ -444,7 +491,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await safe_call(query, "edit_message_caption", caption="Erro: Filme não encontrado.")
                 # --- FIM DA MUDANÇA ---
                 return
-            file_id_to_send = movie.get('dubbed_file_id') if audio_choice == "dub" else movie.get('subtitled_file_id')
+            
+            file_id_to_send = None
+            msg_id_to_copy = None
+            if audio_choice == "dub":
+                file_id_to_send = movie.get('dubbed_file_id')
+                msg_id_to_copy = movie.get('dubbed_msg_id')
+            else:
+                file_id_to_send = movie.get('subtitled_file_id')
+                msg_id_to_copy = movie.get('subtitled_msg_id')
+
             if file_id_to_send:
                 # --- MUDANÇA ---
                 await safe_call(query, "delete_message")
@@ -462,24 +518,57 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ]]
                 video_reply_markup = InlineKeyboardMarkup(keyboard)
 
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        await context.bot.send_video(
-                            chat_id=query.message.chat.id,
-                            video=file_id_to_send,
-                            caption=video_caption,
-                            parse_mode="Markdown",
-                            reply_markup=video_reply_markup,
-                            protect_content=True
-                        )
-                        break
-                    except NetworkError as e:
-                        print(f"Erro de rede ao enviar vídeo (tentativa {attempt + 1}/{max_retries}): {e}")
-                        if attempt + 1 == max_retries:
-                            print("Falha ao enviar vídeo após 3 tentativas.")
-                            return
-                        await asyncio.sleep(2)
+                try:
+                    # PLANO A: Tenta enviar o file_id salvo
+                    print(f"[Plano A] Tentando enviar Filme {movie_id} com file_id: {file_id_to_send[:20]}...")
+                    await context.bot.send_video(
+                        chat_id=query.message.chat.id,
+                        video=file_id_to_send,
+                        caption=video_caption,
+                        parse_mode="Markdown",
+                        reply_markup=video_reply_markup,
+                        protect_content=True
+                    )
+                    
+                except BadRequest as e:
+                    if "Wrong file_id" in str(e) and msg_id_to_copy and STORAGE_CHANNEL_ID:
+                        # PLANO B: O file_id está quebrado, mas temos o msg_id
+                        print(f"🚨 [Plano B] File ID quebrado para Filme {movie_id}. Iniciando Auto-Cura.")
+                        print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID}")
+                        
+                        try:
+                            # 1. Copia a mensagem do canal de armazenamento
+                            copied_message = await context.bot.copy_message(
+                                chat_id=query.message.chat.id,
+                                from_chat_id=STORAGE_CHANNEL_ID,
+                                message_id=msg_id_to_copy,
+                                protect_content=True
+                            )
+                            
+                            # 2. Pega o NOVO file_id válido
+                            new_file_id = copied_message.video.file_id
+                            print(f"   ✅ Sucesso! Novo file_id: {new_file_id[:20]}...")
+                            
+                            # 3. Salva o novo file_id no banco
+                            await db.update_movie_file_id_only(movie_id, new_file_id, audio_choice)
+                            
+                            # 4. Adiciona o caption e botões
+                            await copied_message.edit_caption(
+                                caption=video_caption,
+                                parse_mode="Markdown",
+                                reply_markup=video_reply_markup
+                            )
+                            
+                        except Exception as e_inner:
+                            print(f"   ❌ FALHA no Plano B: {e_inner}")
+                            # Manda uma msg de erro temporária
+                            await context.bot.send_message(chat_id=query.message.chat.id, text="😔 Desculpe, o `file_id` deste filme quebrou e não consegui repará-lo automaticamente. Avise um admin.")
+                    else:
+                        print(f"Erro (sem Plano B): {e}")
+                        await context.bot.send_message(chat_id=query.message.chat.id, text=f"😔 Ocorreu um erro inesperado ao enviar o vídeo: {e}")
+                except Exception as e:
+                    print(f"Erro geral ao enviar vídeo: {e}")
+                    await context.bot.send_message(chat_id=query.message.chat.id, text=f"😔 Ocorreu um erro geral ao enviar o vídeo: {e}")
 
                 await db.log_movie_view(movie_id=movie_id, user_id=user_id)
                 context.user_data['last_action_time'] = time.time()

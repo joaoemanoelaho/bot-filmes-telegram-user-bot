@@ -508,3 +508,74 @@ async def get_active_users() -> list[dict]:
         print(f"Erro ao buscar usuários ativos: {e}")
         return []
     
+async def get_all_movie_file_ids() -> list[dict]:
+    """Busca todos os file_ids da tabela 'movies'."""
+    if not supabase: 
+        return []
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('movies')
+            .select('movie_id, title, dubbed_file_id, subtitled_file_id')
+            .execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar todos os filmes: {e}")
+        return []
+
+async def get_all_episode_file_ids() -> list[dict]:
+    """Busca todos os file_ids da tabela 'episodes'."""
+    if not supabase: 
+        return []
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('episodes')
+            .select('id, episode_number, dubbed_file_id, subtitled_file_id')
+            .execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar todos os episódios: {e}")
+        return []
+    
+async def update_movie_file_id_only(movie_id: int, new_file_id: str, audio_type: str) -> bool:
+    """
+    Atualiza APENAS o file_id de um filme (usado pelo bot de usuário).
+    """
+    if not supabase:
+        return False
+    
+    col = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    
+    try:
+        await asyncio.to_thread(
+            supabase.table('movies').update({col: new_file_id})
+            .eq('movie_id', movie_id)
+            .execute
+        )
+        print(f"✅ [Auto-Cura] File ID do filme {movie_id} ({audio_type}) atualizado.")
+        return True
+    except Exception as e:
+        print(f"❌ [Auto-Cura] Erro ao atualizar file_id do filme {movie_id}: {e}")
+        return False
+
+async def update_episode_file_id_only(episode_id: int, new_file_id: str, audio_type: str) -> bool:
+    """
+    Atualiza APENAS o file_id de um episódio (usado pelo bot de usuário).
+    """
+    if not supabase:
+        return False
+    
+    col = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    
+    try:
+        await asyncio.to_thread(
+            supabase.table('episodes').update({col: new_file_id})
+            .eq('id', episode_id) # O ID da tabela episodes é 'id'
+            .execute
+        )
+        print(f"✅ [Auto-Cura] File ID do episódio {episode_id} ({audio_type}) atualizado.")
+        return True
+    except Exception as e:
+        print(f"❌ [Auto-Cura] Erro ao atualizar file_id do episódio {episode_id}: {e}")
+        return False
