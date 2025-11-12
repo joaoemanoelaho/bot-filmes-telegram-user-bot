@@ -265,6 +265,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             )
                         except BadRequest as e:
                             error_text = str(e).lower() # Normaliza o erro
+                            print(f"--- DEBUG PLANO B (EPISÓDEO) ---")
+                            print(f"1. Erro recebido: {error_text}")
+                            print(f"2. Condição 1 ('wrong file'): {'wrong file id' in error_text or 'wrong file identifier' in error_text}")
+                            print(f"3. Condição 2 (msg_id): {msg_id_to_copy}")
+                            print(f"4. Condição 3 (channel_id): {STORAGE_CHANNEL_ID_SERIES}")
+                            
                             # Agora verifica as duas mensagens de erro:
                             if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
                                 # PLANO B: O file_id está quebrado, mas temos o msg_id
