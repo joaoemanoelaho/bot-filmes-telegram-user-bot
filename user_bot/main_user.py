@@ -82,7 +82,7 @@ async def startup():
         request_motor = AiohttpRequest(
             client_timeout=timeout, 
             connection_pool_size=256, 
-            proxy=final_proxy_url  # <--- O argumento correto para Aiohttp
+            socks_url=final_proxy_url  # <--- O argumento correto para Aiohttp
         )
 
         print("🔵 Criando Application do Bot...")
