@@ -67,27 +67,16 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        if final_proxy_url:
-             print(f"✅ [PROXY] Forçando uso do HTTPXRequest (compatível com SOCKS5) via: {final_proxy_url}")
-        else:
-            print("✅ [PROXY] Usando HTTPXRequest (sem proxy).")
-
-        # Força o uso do HTTPXRequest, que é compatível com SOCKS5
-        request_motor = HTTPXRequest(
-            connect_timeout=30.0, 
-            read_timeout=300.0, 
-            write_timeout=300.0, 
-            pool_timeout=30.0, 
-            proxy_url=final_proxy_url
-        )
-        
-        application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-        print("✅ Application criada com HTTPXRequest.")
-    
-    except Exception as e:
-        print(f"❌ Falha ao criar Application com HTTPXRequest: {e}")
-        # Se nem o HTTPX funcionar, aí sim o erro é crítico
-        raise
+        timeout = aiohttp.ClientTimeout(total=600, connect=60, sock_read=600, sock_connect=60)
+        request_motor = AiohttpRequest(client_timeout=timeout, connection_pool_size=256, proxy=final_proxy_url)
+        try:
+            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+            print("✅ Application criada com AiohttpRequest")
+        except Exception as e:
+            print(f"⚠️ Falha com AiohttpRequest: {e}. Tentando fallback para HTTPX...")
+            request_motor = HTTPXRequest(connect_timeout=30.0, read_timeout=300.0, write_timeout=300.0, pool_timeout=30.0, proxy_url=final_proxy_url)
+            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+            print("✅ Application criada com HTTPXRequest (fallback).")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
