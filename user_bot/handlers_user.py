@@ -510,8 +510,7 @@ async def show_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"**Preço:** R$ {config.get('vip_price'):,.2f}\n"
         f"**Âncora:** R$ {config.get('vip_anchor_price'):,.2f}\n"
         f"**Duração:** {config.get('vip_duration_days')} dias\n\n"
-        f"**Texto de Venda:**\n{config.get('vip_sales_text')}",
-        parse_mode="Markdown"
+        f"**Texto de Venda:**\n{config.get('vip_sales_text')}"
     )
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
