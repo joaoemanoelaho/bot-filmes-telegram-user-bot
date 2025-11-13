@@ -68,26 +68,26 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        print("🔵 Usando HTTPXRequest (o padrão do PTB)...")
+        print("🔵 Usando AiohttpRequest (ptb-contrib)...")
         
-        # -------------------------------------------------------------------
-        # A FORMA CORRETA
-        # A própria classe HTTPXRequest tem o argumento 'proxy_url'.
-        # Ela é responsável por traduzir isso para o httpx (seja ele novo ou antigo).
-        # -------------------------------------------------------------------
-        
-        request_motor = HTTPXRequest(
-            connect_timeout=30.0,
-            read_timeout=300.0,
-            write_timeout=300.0,
-            pool_timeout=30.0,
-            proxy_url=final_proxy_url  # <--- USANDO O ARGUMENTO OFICIAL
+        timeout = aiohttp.ClientTimeout(
+            total=600, 
+            connect=60, 
+            sock_read=600, 
+            sock_connect=60
         )
-        # -------------------------------------------------------------------
+        
+        # A classe AiohttpRequest aceita 'proxy' para URLs HTTP/HTTPS
+        # Isso NÃO vai dar o erro SOCKS, pois seu proxy é HTTP.
+        request_motor = AiohttpRequest(
+            client_timeout=timeout, 
+            connection_pool_size=256, 
+            proxy=final_proxy_url  # <--- O argumento correto para Aiohttp
+        )
 
         print("🔵 Criando Application do Bot...")
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-        print("✅ Application criada com HTTPXRequest.")
+        print("✅ Application criada com AiohttpRequest.")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
