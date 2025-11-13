@@ -68,19 +68,27 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        print("🔵 Usando HTTPXRequest (com suporte nativo a SOCKS)...")
-
-        # O HTTPXRequest SABE o que fazer com a string "socks5://"
-        request_motor = HTTPXRequest(
-            connect_timeout=30.0,
-            read_timeout=300.0,
-            write_timeout=300.0,
-            pool_timeout=30.0,
-            proxy_url=final_proxy_url  
+        print("🔵 Usando AiohttpRequest (ptb-contrib)...")
+        
+        timeout = aiohttp.ClientTimeout(
+            total=600, 
+            connect=60, 
+            sock_read=600, 
+            sock_connect=60
+        )
+        
+        # A classe AiohttpRequest aceita 'proxy' (e não 'proxy_url')
+        # O seu código aqui já estava correto!
+        request_motor = AiohttpRequest(
+            client_timeout=timeout, 
+            connection_pool_size=256, 
+            proxy=final_proxy_url 
         )
 
+        # Removemos o try/except/fallback. 
+        # Se o Aiohttp falhar, queremos ver o erro dele.
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-        print("✅ Application criada com HTTPXRequest.")
+        print("✅ Application criada com AiohttpRequest.")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
