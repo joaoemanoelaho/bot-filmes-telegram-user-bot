@@ -68,8 +68,6 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        print("🔵 Usando AiohttpRequest (ptb-contrib)...")
-        
         timeout = aiohttp.ClientTimeout(
             total=600, 
             connect=60, 
@@ -77,17 +75,33 @@ async def startup():
             sock_connect=60
         )
         
-        
-        # A classe AiohttpRequest aceita 'proxy' (e não 'proxy_url')
-        # O seu código aqui já estava correto!
-        request_motor = AiohttpRequest(
-            client_timeout=timeout, 
-            connection_pool_size=256, 
-            proxy=final_proxy_url 
-        )
+        if final_proxy_url:
+            print(f"✅ [PROXY] Usando proxy configurado (SOCKS5).")
+            print("🔵 Criando conector SOCKS5 com aiohttp-socks...")
+            
+            # 1. Criar o Conector SOCKS5 a partir da URL
+            # É PARA ISSO QUE A 'session' global existe!
+            connector = ProxyConnector.from_url(final_proxy_url)
+            
+            # 2. Criar a sessão AIOHTTP manualmente com o CONECTOR SOCKS
+            session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout
+            )
+            print("✅ Sessão AIOHTTP criada com conector SOCKS.")
+            
+            # 3. Injetar a SESSÃO pronta no AiohttpRequest
+            request_motor = AiohttpRequest(session=session)
+            
+        else:
+            print("⚠️ [PROXY] Rodando sem proxy.")
+            # Se não houver proxy, deixa o AiohttpRequest criar sua própria sessão
+            request_motor = AiohttpRequest(
+                client_timeout=timeout, 
+                connection_pool_size=256
+            )
 
-        # Removemos o try/except/fallback. 
-        # Se o Aiohttp falhar, queremos ver o erro dele.
+        print("🔵 Criando Application do Bot...")
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
         print("✅ Application criada com AiohttpRequest.")
 
