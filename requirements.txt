@@ -14,5 +14,5 @@ hachoir
 aiohttp[speedups]>=3.11
 "ptbcontrib[aiohttp_request_socks] @ git+https://github.com/python-telegram-bot/ptbcontrib.git@refs/pull/141/head"
 python-multipart
-aiohttp-socks
+aiohttp_socks>=0.10.2
 httpx[socks]
