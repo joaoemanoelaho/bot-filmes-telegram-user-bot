@@ -264,47 +264,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 protect_content=True
                             )
                         except BadRequest as e:
-                            error_text = str(e).lower() # Normaliza o erro
-                            print(f"--- DEBUG PLANO B (EPISÓDEO) ---")
-                            print(f"1. Erro recebido: {error_text}")
-                            print(f"2. Condição 1 ('wrong file'): {'wrong file id' in error_text or 'wrong file identifier' in error_text}")
-                            print(f"3. Condição 2 (msg_id): {msg_id_to_copy}")
-                            print(f"4. Condição 3 (channel_id): {STORAGE_CHANNEL_ID_SERIES}")
-
-                            # Agora verifica as duas mensagens de erro:
+                            error_text = str(e).lower()
+                            
                             if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
                                 # PLANO B: O file_id está quebrado, mas temos o msg_id
-                                print(f"🚨 [Plano B] File ID quebrado para Ep {episode_id}. Iniciando Auto-Cura.")
+                                print(f"🚨 [Plano B] File ID quebrado para Ep {episode_id}. Copiando...")
                                 print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID_SERIES}")
                                 
                                 try:
-                                    # 1. Copia a mensagem do canal de armazenamento (o bot PRECISA ser admin lá)
+                                    # 1. Copia a mensagem (o vídeo)
                                     copied_message = await context.bot.copy_message(
                                         chat_id=user.id,
                                         from_chat_id=STORAGE_CHANNEL_ID_SERIES,
                                         message_id=msg_id_to_copy,
-                                        protect_content=True # Protege a cópia
+                                        protect_content=True
                                     )
                                     
-                                    # 2. Pega o NOVO file_id válido
-                                    new_file_id = copied_message.video.file_id
-                                    print(f"   ✅ Sucesso! Novo file_id: {new_file_id[:20]}...")
-                                    
-                                    # 3. Salva o novo file_id no banco para o futuro
-                                    await db.update_episode_file_id_only(episode_id, new_file_id, audio_type)
-                                    
-                                    # 4. Adiciona o caption e botões à mensagem copiada
-                                    await copied_message.edit_caption(
+                                    # --- MUDANÇA (v6.1) ---
+                                    # 2. NÃO tentamos pegar file_id.
+                                    # 3. Editamos o caption da mensagem que acabamos de copiar.
+                                    await context.bot.edit_message_caption(
+                                        chat_id=user.id,
+                                        message_id=copied_message.message_id, # Usamos o ID da msg copiada
                                         caption=video_caption,
                                         parse_mode="Markdown",
                                         reply_markup=video_reply_markup
                                     )
+                                    # --- FIM DA MUDANÇA ---
                                     
                                 except Exception as e_inner:
                                     print(f"   ❌ FALHA no Plano B: {e_inner}")
                                     await status_msg.edit_text("😔 Desculpe, o `file_id` deste episódio quebrou e não consegui repará-lo automaticamente. Avise um admin.")
                             else:
-                                # O erro não é "Wrong file_id" ou não temos msg_id para copiar
                                 print(f"Erro (sem Plano B): {e}")
                                 await status_msg.edit_text(f"😔 Ocorreu um erro inesperado ao enviar o vídeo: {e}")
                         except Exception as e:
@@ -540,20 +531,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     
                 except BadRequest as e:
                     error_text = str(e).lower()
-                    print(f"--- DEBUG PLANO B (FILME) ---")
-                    print(f"1. Erro recebido: {error_text}")
-                    print(f"2. Condição 1 ('wrong file'): {'wrong file id' in error_text or 'wrong file identifier' in error_text}")
-                    print(f"3. Condição 2 (msg_id): {msg_id_to_copy}")
-                    print(f"4. Condição 3 (channel_id): {STORAGE_CHANNEL_ID}")
                     
-                    # Agora verifica as duas mensagens de erro:
                     if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID:
                         # PLANO B: O file_id está quebrado, mas temos o msg_id
-                        print(f"🚨 [Plano B] File ID quebrado para Filme {movie_id}. Iniciando Auto-Cura.")
+                        print(f"🚨 [Plano B] File ID quebrado para Filme {movie_id}. Copiando...")
                         print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID}")
                         
                         try:
-                            # 1. Copia a mensagem do canal de armazenamento
+                            # 1. Copia a mensagem (o vídeo)
                             copied_message = await context.bot.copy_message(
                                 chat_id=query.message.chat.id,
                                 from_chat_id=STORAGE_CHANNEL_ID,
@@ -561,23 +546,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 protect_content=True
                             )
                             
-                            # 2. Pega o NOVO file_id válido
-                            new_file_id = copied_message.video.file_id
-                            print(f"   ✅ Sucesso! Novo file_id: {new_file_id[:20]}...")
-                            
-                            # 3. Salva o novo file_id no banco
-                            await db.update_movie_file_id_only(movie_id, new_file_id, audio_choice)
-                            
-                            # 4. Adiciona o caption e botões
-                            await copied_message.edit_caption(
+                            # --- MUDANÇA (v6.1) ---
+                            # 2. NÃO tentamos pegar file_id.
+                            # 3. Editamos o caption da mensagem que acabamos de copiar.
+                            await context.bot.edit_message_caption(
+                                chat_id=query.message.chat.id,
+                                message_id=copied_message.message_id, # Usamos o ID da msg copiada
                                 caption=video_caption,
                                 parse_mode="Markdown",
                                 reply_markup=video_reply_markup
                             )
+                            # --- FIM DA MUDANÇA ---
                             
                         except Exception as e_inner:
                             print(f"   ❌ FALHA no Plano B: {e_inner}")
-                            # Manda uma msg de erro temporária
                             await context.bot.send_message(chat_id=query.message.chat.id, text="😔 Desculpe, o `file_id` deste filme quebrou e não consegui repará-lo automaticamente. Avise um admin.")
                     else:
                         print(f"Erro (sem Plano B): {e}")
