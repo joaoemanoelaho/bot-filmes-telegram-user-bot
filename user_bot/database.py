@@ -135,8 +135,9 @@ async def get_movie_by_id(movie_id: int) -> dict | None:
     if not supabase:
         return None
     try:
+        query = "*, dubbed_msg_id, subtitled_msg_id"
         response = await asyncio.to_thread(
-            supabase.table('movies').select('*').eq('movie_id', movie_id).single().execute
+            supabase.table('movies').select(query).eq('movie_id', movie_id).single().execute
         )
         return response.data
     except Exception as e:
@@ -430,7 +431,7 @@ async def get_full_episode_details(episode_id: int) -> dict | None:
         response = await asyncio.to_thread(
             supabase.table('episodes')
             .select(
-                'id, episode_number, title, dubbed_file_id, subtitled_file_id, '
+                'id, episode_number, title, dubbed_file_id, subtitled_file_id,, dubbed_msg_id, subtitled_msg_id, '
                 'seasons ( '
                 '   id, season_number, series_id, '
                 '   series ( '
