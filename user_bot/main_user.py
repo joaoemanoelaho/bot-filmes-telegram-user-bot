@@ -87,7 +87,7 @@ async def startup():
             read_timeout=300.0,
             write_timeout=300.0,
             pool_timeout=30.0,
-            httpx_args=httpx_settings  # <--- AQUI ESTÁ A MUDANÇA
+            httpx_kwargs=httpx_settings  # <--- AQUI ESTÁ A MUDANÇA
         )
         # -------------------------------------------------------------------
 
