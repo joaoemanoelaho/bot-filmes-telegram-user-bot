@@ -431,7 +431,7 @@ async def get_full_episode_details(episode_id: int) -> dict | None:
         response = await asyncio.to_thread(
             supabase.table('episodes')
             .select(
-                'id, episode_number, title, dubbed_file_id, subtitled_file_id,, dubbed_msg_id, subtitled_msg_id, '
+                'id, episode_number, title, dubbed_file_id, subtitled_file_id, dubbed_msg_id, subtitled_msg_id, '
                 'seasons ( '
                 '   id, season_number, series_id, '
                 '   series ( '
