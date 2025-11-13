@@ -12,7 +12,7 @@ python-dotenv
 flask
 hachoir
 aiohttp[speedups]>=3.11
-ptbcontrib[aiohttp_request_socks] @ git+https://github.com/python-telegram-bot/ptbcontrib.git@cc7eeceb182ccc1a99974086a13e6c33829ffdb8
+ptbcontrib[aiohttp_request_socks] @ git+https://github.com/python-telegram-bot/ptbcontrib.git@b8b549339e10260f85f5223c6838382d6b33458e
 python-multipart
 aiohttp_socks>=0.10.2
 httpx[socks]
