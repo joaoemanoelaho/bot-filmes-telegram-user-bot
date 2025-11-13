@@ -68,29 +68,19 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        timeout = aiohttp.ClientTimeout(total=600, connect=60, sock_read=600, sock_connect=60)
+        print("🔵 Usando HTTPXRequest (com suporte nativo a SOCKS)...")
 
-        # 2. CRIE O CONECTOR com a sua URL de proxy
-        # Use a variável 'final_proxy_url' que você já tinha
-        connector = ProxyConnector.from_url(final_proxy_url)
-
-        # 3. PASSE O 'CONNECTOR' (NÃO 'proxy') PARA O AiohttpRequest
-        request_motor = AiohttpRequest(
-            client_timeout=timeout,
-            connection_pool_size=256,
-            connector=connector  # <-- A MUDANÇA É AQUI!
-            # REMOVA a linha 'proxy=final_proxy_url'
+        # O HTTPXRequest SABE o que fazer com a string "socks5://"
+        request_motor = HTTPXRequest(
+            connect_timeout=30.0,
+            read_timeout=300.0,
+            write_timeout=300.0,
+            pool_timeout=30.0,
+            proxy_url=final_proxy_url  
         )
 
-        # 4. O resto do seu código de 'try...except' continua igual
-        try:
-            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-            print("✅ Application criada com AiohttpRequest (e conector SOCKS5)")
-        except Exception as e:
-            print(f"⚠️ Falha com AiohttpRequest: {e}. Tentando fallback para HTTPX...")
-            request_motor = HTTPXRequest(connect_timeout=30.0, read_timeout=300.0, write_timeout=300.0, pool_timeout=30.0, proxy_url=final_proxy_url)
-            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-            print("✅ Application criada com HTTPXRequest (fallback).")
+        application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+        print("✅ Application criada com HTTPXRequest.")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
