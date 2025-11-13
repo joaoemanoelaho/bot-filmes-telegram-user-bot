@@ -68,42 +68,32 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        timeout = aiohttp.ClientTimeout(
-            total=600, 
-            connect=60, 
-            sock_read=600, 
-            sock_connect=60
-        )
+        print("🔵 Usando HTTPXRequest (com suporte nativo a SOCKS)...")
         
+        # -------------------------------------------------------------------
+        # A FORMA CORRETA DE PASSAR PROXY PARA HTTPXRequest (v20+)
+        # -------------------------------------------------------------------
+        # O HTTPXRequest usa 'httpx' por baixo, que entende 'socks5://'
+        # nativamente quando passado dentro de 'httpx_args'.
+        
+        httpx_settings = {}
         if final_proxy_url:
-            print(f"✅ [PROXY] Usando proxy configurado (SOCKS5).")
-            print("🔵 Criando conector SOCKS5 com aiohttp-socks...")
-            
-            # 1. Criar o Conector SOCKS5 a partir da URL
-            # É PARA ISSO QUE A 'session' global existe!
-            connector = ProxyConnector.from_url(final_proxy_url)
-            
-            # 2. Criar a sessão AIOHTTP manualmente com o CONECTOR SOCKS
-            session = aiohttp.ClientSession(
-                connector=connector,
-                timeout=timeout
-            )
-            print("✅ Sessão AIOHTTP criada com conector SOCKS.")
-            
-            # 3. Injetar a SESSÃO pronta no AiohttpRequest
-            request_motor = AiohttpRequest(session=session)
-            
-        else:
-            print("⚠️ [PROXY] Rodando sem proxy.")
-            # Se não houver proxy, deixa o AiohttpRequest criar sua própria sessão
-            request_motor = AiohttpRequest(
-                client_timeout=timeout, 
-                connection_pool_size=256
-            )
+            # O 'httpx' espera um dicionário ou uma string. 
+            # A string do seu config.py é o formato correto.
+            httpx_settings['proxies'] = final_proxy_url
+
+        request_motor = HTTPXRequest(
+            connect_timeout=30.0,
+            read_timeout=300.0,
+            write_timeout=300.0,
+            pool_timeout=30.0,
+            httpx_args=httpx_settings  # <--- AQUI ESTÁ A MUDANÇA
+        )
+        # -------------------------------------------------------------------
 
         print("🔵 Criando Application do Bot...")
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-        print("✅ Application criada com AiohttpRequest.")
+        print("✅ Application criada com HTTPXRequest.")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
