@@ -11,7 +11,6 @@ from telegram import Update
 from telegram.ext import Application
 from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
-from aiohttp_socks import ProxyConnector
 from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
 
@@ -68,32 +67,16 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        connector = None
-        if final_proxy_url:
-            print(f"✅ [PROXY] Configurando conector SOCKS5 para: {final_proxy_url}")
-            # 1. Cria o "tradutor" SOCKS
-            connector = ProxyConnector.from_url(final_proxy_url)
-        else:
-            print("⚠️ [PROXY] Rodando sem proxy.")
-
-        # 2. Cria a sessão do aiohttp usando o "tradutor"
-        # (O 'connector' será None se não houver proxy, o que é o comportamento padrão)
         timeout = aiohttp.ClientTimeout(total=600, connect=60, sock_read=600, sock_connect=60)
-        session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=timeout
-        )
-
-        # 3. Informa ao PTB para usar esta sessão já configurada
-        request_motor = AiohttpRequest(
-            session=session,
-            connection_pool_size=256
-            # Não passamos mais 'proxy=' aqui, pois a sessão já o contém
-        )
-        
-        # 4. Constrói o bot
-        application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
-        print("✅ Application criada com AiohttpRequest (via aiohttp-socks).")
+        request_motor = AiohttpRequest(client_timeout=timeout, connection_pool_size=256, proxy=final_proxy_url)
+        try:
+            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+            print("✅ Application criada com AiohttpRequest")
+        except Exception as e:
+            print(f"⚠️ Falha com AiohttpRequest: {e}. Tentando fallback para HTTPX...")
+            request_motor = HTTPXRequest(connect_timeout=30.0, read_timeout=300.0, write_timeout=300.0, pool_timeout=30.0, proxy_url=final_proxy_url)
+            application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+            print("✅ Application criada com HTTPXRequest (fallback).")
 
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
