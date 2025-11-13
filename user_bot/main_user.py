@@ -68,26 +68,20 @@ async def startup():
         print("⚠️ [PROXY] Rodando sem proxy.")
 
     try:
-        print("🔵 Usando HTTPXRequest (com suporte nativo a SOCKS)...")
+        print("🔵 Usando HTTPXRequest (o padrão do PTB)...")
         
         # -------------------------------------------------------------------
-        # A FORMA CORRETA DE PASSAR PROXY PARA HTTPXRequest (v20+)
+        # A FORMA CORRETA
+        # A própria classe HTTPXRequest tem o argumento 'proxy_url'.
+        # Ela é responsável por traduzir isso para o httpx (seja ele novo ou antigo).
         # -------------------------------------------------------------------
-        # O HTTPXRequest usa 'httpx' por baixo, que entende 'socks5://'
-        # nativamente quando passado dentro de 'httpx_args'.
         
-        httpx_settings = {}
-        if final_proxy_url:
-            # O 'httpx' espera um dicionário ou uma string. 
-            # A string do seu config.py é o formato correto.
-            httpx_settings['proxies'] = final_proxy_url
-
         request_motor = HTTPXRequest(
             connect_timeout=30.0,
             read_timeout=300.0,
             write_timeout=300.0,
             pool_timeout=30.0,
-            httpx_kwargs=httpx_settings  # <--- AQUI ESTÁ A MUDANÇA
+            proxy_url=final_proxy_url  # <--- USANDO O ARGUMENTO OFICIAL
         )
         # -------------------------------------------------------------------
 
