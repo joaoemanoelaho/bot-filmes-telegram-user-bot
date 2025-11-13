@@ -71,24 +71,19 @@ async def startup():
         connector = None
         if final_proxy_url:
             print(f"✅ [PROXY] Configurando conector SOCKS5 para: {final_proxy_url}")
-            # 1. Cria o "tradutor" SOCKS
+            # 1. Cria o "tradutor" SOCKS (como você sugeriu)
             connector = ProxyConnector.from_url(final_proxy_url)
         else:
-            print("⚠️ [PROXY] Rodando sem proxy.")
+            print("⚠️ [PROXY] Rodando sem conector de proxy.")
 
-        # 2. Cria a sessão do aiohttp usando o "tradutor"
-        # (O 'connector' será None se não houver proxy, o que é o comportamento padrão)
+        # 2. Define o timeout
         timeout = aiohttp.ClientTimeout(total=600, connect=60, sock_read=600, sock_connect=60)
-        session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=timeout
-        )
-
-        # 3. Informa ao PTB para usar esta sessão já configurada
+        
+        # 3. Passa o CONECTOR (e não a sessão) para o AiohttpRequest
         request_motor = AiohttpRequest(
-            session=session,
+            connector=connector,        # <-- ESTA É A CORREÇÃO (de 'session' para 'connector')
+            client_timeout=timeout,
             connection_pool_size=256
-            # Não passamos mais 'proxy=' aqui, pois a sessão já o contém
         )
         
         # 4. Constrói o bot
