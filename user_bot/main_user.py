@@ -77,6 +77,7 @@ async def startup():
             sock_connect=60
         )
         
+        
         # A classe AiohttpRequest aceita 'proxy' (e não 'proxy_url')
         # O seu código aqui já estava correto!
         request_motor = AiohttpRequest(
