@@ -115,6 +115,31 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
         traceback.print_exc()
         return (f"Erro ao carregar detalhes do episódio: {e}", None)
 
+async def _get_vip_sales_message(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Busca a configuração de venda do DB e formata a mensagem e os botões.
+    """
+    config = await db.get_bot_config()
+    
+    # Pega os valores do DB ou usa defaults
+    price = config.get('vip_price', 4.99)
+    anchor_price = config.get('vip_anchor_price', 14.99)
+    sales_text = config.get('vip_sales_text', 'Para continuar, assine o VIP!')
+    
+    # Formata o texto de venda substituindo os placeholders
+    formatted_text = sales_text.format(
+        PRICE=f"R$ {price:,.2f}",
+        ANCHOR_PRICE=f"R$ {anchor_price:,.2f}"
+    )
+    
+    keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
+    
+    # Se for um callback_query (botão), adiciona o botão "Voltar"
+    if 'update' in context.user_data and isinstance(context.user_data['update'], Update) and context.user_data['update'].callback_query:
+         keyboard.append([InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")])
+         
+    return (formatted_text, InlineKeyboardMarkup(keyboard))
+
 # =================================================================
 # === HANDLERS PRINCIPAIS (COM PROTEÇÃO) ===
 # =================================================================
@@ -157,30 +182,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
 
                     if not await db.is_user_vip(user.id):
+                        # --- MUDANÇA (v7.0): Usa o helper ---
+                        context.user_data['update'] = update # Salva o update para o helper
+                        sales_text, reply_markup = await _get_vip_sales_message(context)
                         await context.bot.send_message(
                             chat_id=user.id,
-                            text=(
-                                f"Opa, {user.first_name}! 👋\n\n"
-                                "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                                "Clique no botão abaixo para ver as opções."
-                            ),
-                            parse_mode="Markdown"
+                            text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
+                            parse_mode="Markdown",
+                            reply_markup=reply_markup
                         )
-                        class FakeQuery:
-                            def __init__(self, usr, msg):
-                                self.from_user = usr
-                                self.message = msg
-                                self.data = "main_vip"
-                            async def answer(self): pass
-                            async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
-                            async def delete_message(self): pass
-                            async def reply_photo(self, *a, **kw): await context.bot.send_photo(user.id, *a, **kw)
-                        class FakeUpdate:
-                            def __init__(self, usr, msg):
-                                self.effective_user = usr
-                                self.callback_query = FakeQuery(usr, msg)
-                                self.message = msg
-                        await button_handler(FakeUpdate(user, message_to_reply), context)
+                        # --- FIM DA MUDANÇA ---
                         return
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
@@ -321,31 +332,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                     # --- VERIFICAÇÃO DE VIP ---
                     if not await db.is_user_vip(user.id):
+                        # --- MUDANÇA (v7.0): Usa o helper ---
+                        context.user_data['update'] = update
+                        sales_text, reply_markup = await _get_vip_sales_message(context)
                         await context.bot.send_message(
                             chat_id=user.id,
-                            text=(
-                                f"Opa, {user.first_name}! 👋\n\n"
-                                "Para continuar assistindo, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                                "Clique no botão abaixo para ver as opções."
-                            ),
-                            parse_mode="Markdown"
+                            text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
+                            parse_mode="Markdown",
+                            reply_markup=reply_markup
                         )
-                        # Simula um clique no botão main_vip para mostrar o menu de pagamento
-                        class FakeQuery:
-                            def __init__(self, usr, msg):
-                                self.from_user = usr
-                                self.message = msg
-                                self.data = "main_vip"
-                            async def answer(self): pass
-                            async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
-                            async def delete_message(self): pass
-                            async def reply_photo(self, *a, **kw): await context.bot.send_photo(user.id, *a, **kw)
-                        class FakeUpdate:
-                            def __init__(self, usr, msg):
-                                self.effective_user = usr
-                                self.callback_query = FakeQuery(usr, msg)
-                                self.message = msg
-                        await button_handler(FakeUpdate(user, message_to_reply), context)
+                        # --- FIM DA MUDANÇA ---
                         return
                     # --- FIM DA VERIFICAÇÃO ---
 
@@ -418,6 +414,87 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
 
+async def set_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /setconfig [preço] [âncora] [dias]
+    Ex: /setconfig 4.99 14.99 7
+    """
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return await update.message.reply_text("Você não tem permissão.")
+        
+    try:
+        price = float(context.args[0])
+        anchor_price = float(context.args[1])
+        duration = int(context.args[2])
+        
+        await db.set_bot_config_value('vip_price', price)
+        await db.set_bot_config_value('vip_anchor_price', anchor_price)
+        await db.set_bot_config_value('vip_duration_days', duration)
+        
+        await update.message.reply_text(
+            "✅ Configuração de VIP atualizada!\n\n"
+            f"Preço: R$ {price:,.2f}\n"
+            f"Âncora (De): R$ {anchor_price:,.2f}\n"
+            f"Duração: {duration} dias"
+        )
+    except (IndexError, ValueError):
+        await update.message.reply_text(
+            "Erro: Use o formato correto.\n"
+            "/setconfig [preço] [âncora] [dias]\n"
+            "Ex: /setconfig 4.99 14.99 7"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Erro ao salvar: {e}")
+
+async def set_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /settext [texto de venda]
+    Usa {PRICE} e {ANCHOR_PRICE} como placeholders.
+    """
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return await update.message.reply_text("Você não tem permissão.")
+        
+    try:
+        # Pega o texto completo depois do comando
+        sales_text = update.message.text.split(' ', 1)[1]
+        
+        if '{PRICE}' not in sales_text or '{ANCHOR_PRICE}' not in sales_text:
+            await update.message.reply_text("⚠️ Atenção: O seu texto não contém os placeholders {PRICE} e {ANCHOR_PRICE}. Salvo mesmo assim.")
+            
+        await db.set_bot_config_value('vip_sales_text', sales_text)
+        
+        await update.message.reply_text(
+            "✅ Novo texto de venda salvo!\n\n"
+            f"**Preview:**\n{sales_text.format(PRICE='R$ X.XX', ANCHOR_PRICE='R$ Y.YY')}",
+            parse_mode="Markdown"
+        )
+    except IndexError:
+        await update.message.reply_text(
+            "Erro: Você precisa enviar o texto.\n"
+            "Ex: /settext Novo texto de venda com {PRICE}!"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Erro ao salvar: {e}")
+
+async def show_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mostra a configuração atual."""
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return await update.message.reply_text("Você não tem permissão.")
+        
+    config = await db.get_bot_config()
+    
+    await update.message.reply_text(
+        "⚙️ **Configuração Atual do Bot** ⚙️\n\n"
+        f"**Preço:** R$ {config.get('vip_price'):,.2f}\n"
+        f"**Âncora:** R$ {config.get('vip_anchor_price'):,.2f}\n"
+        f"**Duração:** {config.get('vip_duration_days')} dias\n\n"
+        f"**Texto de Venda:**\n{config.get('vip_sales_text')}",
+        parse_mode="Markdown"
+    )
+
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
     async with DB_SEMAPHORE:
@@ -426,18 +503,15 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
         await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
         if not await db.is_user_vip(user_id):
-            keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            message_text = (
-                f"Opa, {update.effective_user.first_name}! 👋\n\n"
-                "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
-                "Assine para poder pedir filmes/séries e ver o que está em alta."
-            )
+            # --- MUDANÇA (v7.0): Usa o helper ---
+            context.user_data['update'] = update
+            sales_text, reply_markup = await _get_vip_sales_message(context)
             await update.message.reply_text(
-                text=message_text,
+                text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
+            # --- FIM DA MUDANÇA ---
             return
 
         context.user_data['state'] = 'awaiting_request'
@@ -634,26 +708,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
             if not await db.is_user_vip(user_id):
-                # --- MUDANÇA ---
+                # --- MUDANÇA (v7.0): Usa o helper ---
                 await safe_call(query, "answer")
-                # --- FIM DA MUDANÇA ---
-                keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
-                            [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                message_text = (
-                    f"Opa, {query.from_user.first_name}! 👋\n\n"
-                    "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
-                    "Assine para poder pedir filmes/séries e ver o que está em alta."
-                )
+                sales_text, reply_markup = await _get_vip_sales_message(context)
+                
                 try:
-                    # --- MUDANÇA ---
                     await safe_call(query, "edit_message_text",
-                        text=message_text,
+                        text=f"Opa, {query.from_user.first_name}! 👋\n\n{sales_text}",
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
+                # --- FIM DA MUDANÇA ---
                 return
 
             # --- MUDANÇA ---
@@ -672,26 +738,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
             if not await db.is_user_vip(user_id):
-                # --- MUDANÇA ---
+                # --- MUDANÇA (v7.0): Usa o helper ---
                 await safe_call(query, "answer")
-                # --- FIM DA MUDANÇA ---
-                keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")],
-                            [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                message_text = (
-                    f"Opa, {query.from_user.first_name}! 👋\n\n"
-                    "Esta é uma função exclusiva do 🍿 **Acesso Pipoca Premium**!\n\n"
-                    "Assine para poder pedir filmes/séries e ver o que está em alta."
-                )
+                sales_text, reply_markup = await _get_vip_sales_message(context)
+                
                 try:
-                    # --- MUDANÇA ---
                     await safe_call(query, "edit_message_text",
-                        text=message_text,
+                        text=f"Opa, {query.from_user.first_name}! 👋\n\n{sales_text}",
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
+                # --- FIM DA MUDANÇA ---
                 return
 
             # --- MUDANÇA ---
@@ -796,15 +854,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif callback_data == "main_vip":
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
-        cooldown = 60
+        cooldown = 60 # 60 segundos de cooldown
 
         if now - last_request < cooldown:
-            # --- MUDANÇA ---
             await safe_call(query, "answer",
                 text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s para gerar um novo PIX.",
                 show_alert=True
             )
-            # --- FIM DA MUDANÇA ---
             return
 
         async with DB_SEMAPHORE:
@@ -814,51 +870,62 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             if await db.is_user_vip(user_id):
                 try:
-                    # --- MUDANÇA ---
                     await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
-                    # --- FIM DA MUDANÇA ---
                 except Exception: pass
                 return
-
+            
+            # --- MUDANÇA (v7.0): Lógica de verificação de pagamento pendente ---
             user_details = await db.get_user_details(user_id)
             active_payment_id = user_details.get('active_payment_id') if user_details else None
 
+            # Puxa a configuração de dias do DB ANTES de verificar o pagamento
+            config = await db.get_bot_config()
+            duration_days = config.get('vip_duration_days', 7)
+
             if active_payment_id:
-                # Um ID está preso. Vamos verificar o status UMA VEZ.
                 await safe_call(query, "edit_message_text", text="⏳ Verificando pagamento pendente...")
                 status = await payments.check_payment_status(active_payment_id)
 
                 if status == "paid":
-                    # O Webhook falhou, mas o pagamento está OK. Libera manualmente.
-                    await db.set_user_as_vip(user_id, duration_days=7) # VIP por 7 dias
+                    await db.set_user_as_vip(user_id, duration_days=duration_days) # Usa a duração do DB
                     await db.clear_user_active_payment_id(user_id)
                     print(f"✅ VIP ATIVADO (via verificação manual) para UserID: {user_id}")
                     await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
                     return
                 
                 elif status == "created":
-                    # O PIX ainda está pendente. Agora sim, mostramos o erro da sua imagem.
                     await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
                     return
 
                 elif status in ["expired", "canceled", "not_found"]:
-                    # O PIX expirou ou falhou. Limpa o ID e deixa gerar um novo.
                     print(f"PIX {active_payment_id} expirado/cancelado. Limpando...")
                     await db.clear_user_active_payment_id(user_id)
-                    # Deixa o código continuar para gerar um novo PIX
                 
                 else:
-                    # Erro na API ou status desconhecido
                     await safe_call(query, "edit_message_text", text="😕 Erro ao verificar seu pagamento anterior. Tente novamente em 1 minuto.")
                     return
+            
+            # --- FIM DA LÓGICA DE VERIFICAÇÃO ---
 
             context.user_data['last_pix_request'] = time.time()
+            
+            # --- MUDANÇA GERAL DE MARKETING (v7.0) ---
+            
+            # 1. Pega as configurações do DB (já pego acima)
+            vip_price = config.get('vip_price', 4.99)
+            vip_anchor_price = config.get('vip_anchor_price', 14.99)
+            sales_text = config.get('vip_sales_text', 'Seja VIP!')
 
-            # --- MUDANÇA ---
-            await safe_call(query, "edit_message_text", text="⏳ Gerando sua cobrança PIX, aguarde...")
-            # --- FIM DA MUDANÇA ---
-            vip_price = 0.50  # Preço do VIP
+            # 2. Mostra o texto de venda enquanto gera o PIX
+            formatted_sales_text = sales_text.format(
+                PRICE=f"R$ {vip_price:,.2f}",
+                ANCHOR_PRICE=f"R$ {vip_anchor_price:,.2f}"
+            )
+            await safe_call(query, "edit_message_text", 
+                            text=f"{formatted_sales_text}\n\n⏳ _Aguarde, estamos gerando seu PIX promocional..._",
+                            parse_mode="Markdown")
 
+            # 3. Cria o pagamento com o preço do DB
             payment_data = await payments.create_pix_payment(user_id=user_id, amount=vip_price)
 
             if payment_data and payment_data.get("qr_code_base64"):
@@ -870,35 +937,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 qr_image_file = io.BytesIO(qr_image_data)
                 pix_code = payment_data['qr_code_text']
                 
-                # --- NOVO TEXTO PARA WEBHOOK ---
+                # 4. Cria o caption do PIX com a nova âncora de preço
                 caption = (
-                    f"🍿 **Seu Acesso Pipoca Premium está quase pronto!** ✨\n\n"
-                    f"Para concluir, faça o pagamento de R${vip_price:.2f} via PIX.\n\n"
+                    f"✨ **Seu PIX Promocional está pronto!**\n\n"
+                    f"Preço normal: ~~R$ {vip_anchor_price:,.2f}~~\n"
+                    f"Preço HOJE: **R$ {vip_price:,.2f}**\n\n"
                     f"**1.** Escaneie o QR Code acima.\n"
                     f"**2.** Ou use o PIX Copia e Cola abaixo:\n"
                     f"`{pix_code}`\n\n"
-                    "✅ **Seu acesso será liberado AUTOMATICAMENTE** assim que o pagamento for confirmado pelo banco.\n\n"
-                    "⚠️ *Este código expira em alguns minutos.*"
+                    "✅ Seu acesso Premium é **liberado automaticamente** segundos após o pagamento.\n\n"
+                    "⚠️ **ATENÇÃO: Este código expira em 5 minutos!**\n"
+                    "Pague agora para travar o preço promocional."
                 )
-                # --- FIM DO NOVO TEXTO ---
+                # --- FIM DA MUDANÇA GERAL ---
 
-                # --- MUDANÇA ---
-                # Esta lógica é mais segura do que a sua anterior
                 await safe_call(query.message, "delete")
-                # --- FIM DA MUDANÇA ---
 
                 msg_qrcode = await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
                     parse_mode="Markdown", reply_markup=None
                 )
                 
-
                 qr_message_id = msg_qrcode.message_id
-                await db.set_user_active_payment_id(user_id, payment_id, qr_message_id)
+                # ATENÇÃO: Seu db.set_user_active_payment_id precisa aceitar qr_message_id
+                await db.set_user_active_payment_id(user_id, payment_id, qr_message_id) 
             else:
-                # --- MUDANÇA ---
                 await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
-                # --- FIM DA MUDANÇA ---
 
     # --- REMOVIDO O BLOCO 'check_payment_' POIS AGORA É WEBHOOK ---
 
@@ -1056,29 +1120,30 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     )
 
                     if not is_vip:
-                        # (Lógica do VIP sem alteração)
+                        # --- MUDANÇA (v7.0): Aponta para o /start?vip ---
                         results.append(
                             InlineQueryResultArticle(
                                 id="vip_required_series",
-                                title="🍿 Acesso Pipoca Premium Necessário!",
+                                title="🍿 Acesso Premium Necessário!",
                                 description="Clique aqui para liberar todas as séries do catálogo.",
                                 thumbnail_url="https://i.imgur.com/L3Ew4wt.png",
                                 reply_markup=InlineKeyboardMarkup([[
                                         InlineKeyboardButton(
                                             "Quero meu Acesso Premium! 🚀",
-                                            url=f"https://t.me/{bot_username}?start=premium"
+                                            # Aponta para o comando /start do bot
+                                            url=f"https://t.me/{bot_username}?start=vip" 
                                         )
                                     ]]),
                                 input_message_content=InputTextMessageContent(
                                     message_text=(
                                         f"Ei {update.inline_query.from_user.first_name}! 👋\n\n"
-                                        "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                                        "Com ele, você libera todo o catálogo e ajuda nosso cinema a ficar sempre online."
+                                        "Para maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!"
                                     ),
                                     parse_mode="Markdown",
                                 )
                             )
                         )
+                        # --- FIM DA MUDANÇA ---
                         cache_time = 5
                         is_personal = True
 
@@ -1345,20 +1410,16 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
         if not await db.is_user_vip(user_id):
-            keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            message_text = (
-                f"Opa, {update.effective_user.first_name}! 👋\n\n"
-                "Para assistir filmes, você precisa do 🍿 **Acesso Pipoca Premium**!\n\n"
-                "✅ Libere **TODOS** os filmes e séries do catálogo.\n"
-                "✅ Ajude a manter o bot online com novos lançamentos!"
-            )
+            # --- MUDANÇA (v7.0): Usa o helper ---
+            context.user_data['update'] = update
+            sales_text, reply_markup = await _get_vip_sales_message(context)
             await context.bot.send_message(
                 chat_id=chat_id_to_reply,
-                text=message_text,
+                text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
+            # --- FIM DA MUDANÇA ---
             return
 
         movie = await db.get_movie_by_id(movie_id)
@@ -1555,3 +1616,6 @@ cancel_command_handler = CommandHandler("cancelar", cancel_handler)
 help_command_handler = CommandHandler("help", help_handler)
 request_command_handler = CommandHandler("pedir", request_command_handler)
 broadcast_handler = CommandHandler("transmissao", broadcast_command_handler)
+set_config_handler = CommandHandler("setconfig", set_config_command, filters=filters.User(user_id=ADMIN_IDS))
+set_text_handler = CommandHandler("settext", set_text_command, filters=filters.User(user_id=ADMIN_IDS))
+show_config_handler = CommandHandler("showconfig", show_config_command, filters=filters.User(user_id=ADMIN_IDS))

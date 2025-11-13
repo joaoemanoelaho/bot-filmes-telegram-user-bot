@@ -4,6 +4,7 @@
 
 import os
 import sys
+import time
 import asyncio # <-- 1. IMPORTAMOS ASYNCIO
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +15,8 @@ from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import datetime, timedelta # Para manipulação de datas
 
-
+_bot_config_cache = None
+_config_cache_time = 0
 
 # Tenta criar a conexão com o Supabase.
 try:
@@ -23,6 +25,58 @@ try:
 except Exception as e:
     print(f"Erro ao conectar com o Supabase: {e}")
     supabase = None
+
+async def get_bot_config() -> dict:
+    """
+    Busca as configurações do bot (preço, texto, etc.) do Supabase.
+    Usa um cache de 60 segundos para evitar sobrecarga.
+    """
+    global _bot_config_cache, _config_cache_time
+    
+    # Cache de 60 segundos
+    now = time.time()
+    if _bot_config_cache and (now - _config_cache_time < 60):
+        return _bot_config_cache
+
+    if not supabase: 
+        # Retorna defaults se o DB falhar
+        return {
+            'vip_price': 4.99, 'vip_anchor_price': 14.99,
+            'vip_duration_days': 7, 'vip_sales_text': 'Seja VIP! (Erro de DB)'
+        }
+        
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('bot_config').select('*').eq('id', 1).single().execute
+        )
+        if response.data:
+            _bot_config_cache = response.data
+            _config_cache_time = now
+            return response.data
+        else:
+            # Se a tabela estiver vazia, retorna defaults
+             return {
+                'vip_price': 4.99, 'vip_anchor_price': 14.99,
+                'vip_duration_days': 7, 'vip_sales_text': 'Seja VIP! (Tabela Vazia)'
+            }
+    except Exception as e:
+        print(f"Erro ao buscar config do bot: {e}")
+        return {} # Falha segura
+
+async def set_bot_config_value(key: str, value) -> bool:
+    """Atualiza um valor específico na tabela de configuração."""
+    global _bot_config_cache, _config_cache_time
+    if not supabase: return False
+    try:
+        await asyncio.to_thread(
+            supabase.table('bot_config').update({key: value}).eq('id', 1).execute
+        )
+        _bot_config_cache = None # Limpa o cache
+        _config_cache_time = 0
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar config do bot: {e}")
+        return False
 
 # 2. TODAS as funções que falam com o DB agora são 'async def'
 # e usam 'await asyncio.to_thread'
