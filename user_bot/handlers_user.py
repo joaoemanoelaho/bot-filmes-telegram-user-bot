@@ -376,6 +376,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await watch_command_handler(update, context, message_deletada=True)
                 return
 
+            elif payload == "vip":
+                # Simula um clique no botão main_vip
+                class FakeQuery:
+                    def __init__(self, usr, msg):
+                        self.from_user = usr
+                        self.message = msg
+                        self.data = "main_vip"
+                    async def answer(self): pass
+                    async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
+                    async def delete_message(self): pass
+                    async def reply_photo(self, *a, **kw): await context.bot.send_photo(user.id, *a, **kw)
+                class FakeUpdate:
+                    def __init__(self, usr, msg):
+                        self.effective_user = usr
+                        self.callback_query = FakeQuery(usr, msg)
+                        self.message = msg
+                await button_handler(FakeUpdate(user, message_to_reply), context)
+                return
+
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
 
         keyboard = [
@@ -852,6 +871,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start(update, context)
 
     elif callback_data == "main_vip":
+        # ETAPA 1: Mostrar o Texto de Venda (Marketing)
+        async with DB_SEMAPHORE:
+            await safe_call(query, "answer")
+            
+            # Pega o texto de venda formatado (o helper já faz isso)
+            context.user_data['update'] = update
+            sales_text, _ = await _get_vip_sales_message(context) # Ignoramos o markup antigo
+
+            # Criamos o NOVO markup com o botão de confirmar
+            keyboard = [
+                [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+                [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            try:
+                # Mostra o texto de venda com o botão "Gerar PIX"
+                await safe_call(query, "edit_message_text",
+                    text=sales_text,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                print(f"Erro ao mostrar sales_text em main_vip: {e}")
+
+    elif callback_data == "confirm_pay":
+        # ETAPA 2: Gerar o PIX (Lógica que estava em "main_vip")
         now = time.time()
         last_request = context.user_data.get('last_pix_request', 0)
         cooldown = 60 # 60 segundos de cooldown
@@ -866,19 +912,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         async with DB_SEMAPHORE:
             await safe_call(query, "answer")
 
-            await db.get_or_create_user(user_id=user_id, first_name=query.from_user.first_name)
-
+            # (Verificação de VIP de novo, por segurança)
             if await db.is_user_vip(user_id):
                 try:
                     await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
                 except Exception: pass
                 return
             
-            # --- MUDANÇA (v7.0): Lógica de verificação de pagamento pendente ---
+            # Lógica de verificação de pagamento pendente
             user_details = await db.get_user_details(user_id)
             active_payment_id = user_details.get('active_payment_id') if user_details else None
 
-            # Puxa a configuração de dias do DB ANTES de verificar o pagamento
             config = await db.get_bot_config()
             duration_days = config.get('vip_duration_days', 7)
 
@@ -887,7 +931,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 status = await payments.check_payment_status(active_payment_id)
 
                 if status == "paid":
-                    await db.set_user_as_vip(user_id, duration_days=duration_days) # Usa a duração do DB
+                    await db.set_user_as_vip(user_id, duration_days=duration_days) 
                     await db.clear_user_active_payment_id(user_id)
                     print(f"✅ VIP ATIVADO (via verificação manual) para UserID: {user_id}")
                     await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
@@ -905,27 +949,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await safe_call(query, "edit_message_text", text="😕 Erro ao verificar seu pagamento anterior. Tente novamente em 1 minuto.")
                     return
             
-            # --- FIM DA LÓGICA DE VERIFICAÇÃO ---
-
             context.user_data['last_pix_request'] = time.time()
             
-            # --- MUDANÇA GERAL DE MARKETING (v7.0) ---
-            
-            # 1. Pega as configurações do DB (já pego acima)
+            # Puxa os preços do DB
             vip_price = config.get('vip_price', 4.99)
             vip_anchor_price = config.get('vip_anchor_price', 14.99)
-            sales_text = config.get('vip_sales_text', 'Seja VIP!')
+            
+            await safe_call(query, "edit_message_text", text="⏳ Gerando sua cobrança PIX, aguarde...")
 
-            # 2. Mostra o texto de venda enquanto gera o PIX
-            formatted_sales_text = sales_text.format(
-                PRICE=f"R$ {vip_price:,.2f}",
-                ANCHOR_PRICE=f"R$ {vip_anchor_price:,.2f}"
-            )
-            await safe_call(query, "edit_message_text", 
-                            text=f"{formatted_sales_text}\n\n⏳ _Aguarde, estamos gerando seu PIX promocional..._",
-                            parse_mode="Markdown")
-
-            # 3. Cria o pagamento com o preço do DB
             payment_data = await payments.create_pix_payment(user_id=user_id, amount=vip_price)
 
             if payment_data and payment_data.get("qr_code_base64"):
@@ -937,7 +968,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 qr_image_file = io.BytesIO(qr_image_data)
                 pix_code = payment_data['qr_code_text']
                 
-                # 4. Cria o caption do PIX com a nova âncora de preço
                 caption = (
                     f"✨ **Seu PIX Promocional está pronto!**\n\n"
                     f"Preço normal: ~~R$ {vip_anchor_price:,.2f}~~\n"
@@ -949,9 +979,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "⚠️ **ATENÇÃO: Este código expira em 5 minutos!**\n"
                     "Pague agora para travar o preço promocional."
                 )
-                # --- FIM DA MUDANÇA GERAL ---
 
-                await safe_call(query.message, "delete")
+                await safe_call(query.message, "delete") # Deleta a mensagem de "venda"
 
                 msg_qrcode = await context.bot.send_photo(
                     chat_id=user_id, photo=qr_image_file, caption=caption,
@@ -959,7 +988,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 
                 qr_message_id = msg_qrcode.message_id
-                # ATENÇÃO: Seu db.set_user_active_payment_id precisa aceitar qr_message_id
                 await db.set_user_active_payment_id(user_id, payment_id, qr_message_id) 
             else:
                 await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
@@ -1130,8 +1158,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 reply_markup=InlineKeyboardMarkup([[
                                         InlineKeyboardButton(
                                             "Quero meu Acesso Premium! 🚀",
-                                            # Aponta para o comando /start do bot
-                                            url=f"https://t.me/{bot_username}?start=vip" 
+                                            url=f"https://t.me/{bot_username}?start=vip"
                                         )
                                     ]]),
                                 input_message_content=InputTextMessageContent(
