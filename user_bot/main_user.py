@@ -104,6 +104,7 @@ async def startup():
         application.add_error_handler(error_handler)
 
         await application.initialize()
+        await application.start()
         
         # Configura Webhook Telegram (garante sincronia com config.py)
         webhook_url = f"{WEBHOOK_DOMAIN}{TELEGRAM_WEBHOOK_PATH}"

@@ -249,6 +249,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
                             f"---\n"
                             f"🍿 Assistido com @{bot_username}"
+                            f"⚠️ *Este vídeo será apagado em 4 horas.*"
                         )
 
                         # --- CORREÇÃO (v5.13): Lógica de navegação otimizada ---
@@ -715,6 +716,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"🎭 *Gênero:* {movie['genre']}\n\n"
                     f"---\n"
                     f"🍿 Assistido com @{bot_username}"
+                    f"⚠️ *Este vídeo será apagado em 4 horas.*"
                 )
                 keyboard = [[
                     InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"),
