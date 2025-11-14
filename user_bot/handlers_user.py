@@ -283,7 +283,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         try:
                             # PLANO A: Tenta enviar o file_id salvo
                             print(f"[Plano A] Tentando enviar Ep {episode_id} com file_id: {file_id_to_send[:20]}...")
-                            await context.bot.send_video(
+                            
+                            # --- MUDANÇA 1: Salva a mensagem enviada ---
+                            sent_message = await context.bot.send_video(
                                 chat_id=user.id,
                                 video=file_id_to_send,
                                 caption=video_caption,
@@ -291,13 +293,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 reply_markup=video_reply_markup,
                                 protect_content=True
                             )
+
+                            # --- MUDANÇA 2: Adiciona o agendamento ---
+                            job_data = {
+                                'chat_id': sent_message.chat_id,
+                                'message_id': sent_message.message_id
+                            }
+                            # Agenda a deleção para 4 horas (14400 segundos)
+                            context.job_queue.run_once(
+                                delete_message_job, 
+                                when=30,  # 4 horas * 60 min * 60 seg
+                                data=job_data,
+                                name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
+                            )
+                            print(f"[JOB] Agendada deleção da msg {sent_message.message_id} em 4h.")
+                            # --- FIM DA MUDANÇA ---
                         except BadRequest as e:
                             error_text = str(e).lower()
-                            
+                        
                             if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID_SERIES:
                                 # PLANO B: O file_id está quebrado, mas temos o msg_id
                                 print(f"🚨 [Plano B] File ID quebrado para Ep {episode_id}. Copiando...")
-                                print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID_SERIES}")
+                                print(f"    Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID_SERIES}")
                                 
                                 try:
                                     # 1. Copia a mensagem (o vídeo)
@@ -308,8 +325,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         protect_content=True
                                     )
                                     
-                                    # --- MUDANÇA (v6.1) ---
-                                    # 2. NÃO tentamos pegar file_id.
                                     # 3. Editamos o caption da mensagem que acabamos de copiar.
                                     await context.bot.edit_message_caption(
                                         chat_id=user.id,
@@ -318,6 +333,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         parse_mode="Markdown",
                                         reply_markup=video_reply_markup
                                     )
+
+                                    # --- MUDANÇA 3: Agendamento do Plano B ---
+                                    job_data = {
+                                        'chat_id': copied_message.chat_id,
+                                        'message_id': copied_message.message_id
+                                    }
+                                    context.job_queue.run_once(
+                                        delete_message_job, 
+                                        when=30, # 4 horas
+                                        data=job_data,
+                                        name=f"del_{copied_message.chat_id}_{copied_message.message_id}"
+                                    )
+                                    print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
                                     # --- FIM DA MUDANÇA ---
                                     
                                 except Exception as e_inner:
@@ -562,6 +590,25 @@ async def show_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"**Texto de Venda:**\n{config.get('vip_sales_text')}"
     )
 
+async def delete_message_job(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Função chamada pelo JobQueue para deletar uma mensagem.
+    """
+    try:
+        # Pega os dados que salvamos quando agendamos
+        chat_id = context.job.data['chat_id']
+        message_id = context.job.data['message_id']
+        
+        print(f"[JOB] Deletando msg {message_id} no chat {chat_id} (após 4h).")
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    
+    except BadRequest as e:
+        # Usuário provavelmente já deletou a msg. Ignoramos.
+        print(f"[JOB-WARN] Não foi possível deletar msg: {e}")
+    except Exception as e:
+        # Outro erro
+        print(f"[JOB-ERROR] Erro ao deletar msg: {e}")
+
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # (Função sem alteração)
     async with DB_SEMAPHORE:
@@ -678,7 +725,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 try:
                     # PLANO A: Tenta enviar o file_id salvo
                     print(f"[Plano A] Tentando enviar Filme {movie_id} com file_id: {file_id_to_send[:20]}...")
-                    await context.bot.send_video(
+                    
+                    # --- MUDANÇA 1: Salva a mensagem enviada ---
+                    sent_message = await context.bot.send_video(
                         chat_id=query.message.chat.id,
                         video=file_id_to_send,
                         caption=video_caption,
@@ -687,13 +736,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         protect_content=True
                     )
                     
+                    # --- MUDANÇA 2: Adiciona o agendamento ---
+                    job_data = {
+                        'chat_id': sent_message.chat_id,
+                        'message_id': sent_message.message_id
+                    }
+                    context.job_queue.run_once(
+                        delete_message_job, 
+                        when=30,  # 4 horas
+                        data=job_data,
+                        name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
+                    )
+                    print(f"[JOB] Agendada deleção da msg {sent_message.message_id} em 4h.")
+                    # --- FIM DA MUDANÇA ---
+                    
                 except BadRequest as e:
                     error_text = str(e).lower()
-                    
+                        
                     if ("wrong file id" in error_text or "wrong file identifier" in error_text) and msg_id_to_copy and STORAGE_CHANNEL_ID:
                         # PLANO B: O file_id está quebrado, mas temos o msg_id
                         print(f"🚨 [Plano B] File ID quebrado para Filme {movie_id}. Copiando...")
-                        print(f"   Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID}")
+                        print(f"    Copiando msg {msg_id_to_copy} do canal {STORAGE_CHANNEL_ID}")
                         
                         try:
                             # 1. Copia a mensagem (o vídeo)
@@ -704,8 +767,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 protect_content=True
                             )
                             
-                            # --- MUDANÇA (v6.1) ---
-                            # 2. NÃO tentamos pegar file_id.
                             # 3. Editamos o caption da mensagem que acabamos de copiar.
                             await context.bot.edit_message_caption(
                                 chat_id=query.message.chat.id,
@@ -714,6 +775,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 parse_mode="Markdown",
                                 reply_markup=video_reply_markup
                             )
+
+                            # --- MUDANÇA 3: Agendamento do Plano B ---
+                            job_data = {
+                                'chat_id': copied_message.chat_id,
+                                'message_id': copied_message.message_id
+                            }
+                            context.job_queue.run_once(
+                                delete_message_job, 
+                                when=30, # 4 horas
+                                data=job_data,
+                                name=f"del_{copied_message.chat_id}_{copied_message.message_id}"
+                            )
+                            print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
                             # --- FIM DA MUDANÇA ---
                             
                         except Exception as e_inner:

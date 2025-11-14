@@ -8,7 +8,7 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 from telegram import Update
-from telegram.ext import Application
+from telegram.ext import Application, PicklePersistence
 from ptbcontrib.aiohttp_request import AiohttpRequest
 import aiohttp
 from aiohttp_socks import ProxyConnector
@@ -83,8 +83,10 @@ async def startup():
             socks_url=final_proxy_url  # <--- O argumento correto para Aiohttp
         )
 
-        print("🔵 Criando Application do Bot...")
-        application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).build()
+        persistence = PicklePersistence(filepath="bot_persistence.pkl")
+
+        print("🔵 Criando Application do Bot com Persistência...")
+        application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).persistence(persistence).build()
         print("✅ Application criada com AiohttpRequest.")
 
         application.add_handler(handlers.start_handler)
