@@ -303,7 +303,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             # Agenda a deleção para 4 horas (14400 segundos)
                             context.job_queue.run_once(
                                 delete_message_job, 
-                                when=30,  # 4 horas * 60 min * 60 seg
+                                when=14400,  # 4 horas * 60 min * 60 seg
                                 data=job_data,
                                 name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
                             )
@@ -745,7 +745,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     }
                     context.job_queue.run_once(
                         delete_message_job, 
-                        when=30,  # 4 horas
+                        when=14400,  # 4 horas
                         data=job_data,
                         name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
                     )
@@ -785,11 +785,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             }
                             context.job_queue.run_once(
                                 delete_message_job, 
-                                when=30, # Teste de 30 segundos
+                                when=14400, # Agendamento para 4 horas
                                 data=job_data,
                                 name=f"del_{query.message.chat.id}_{copied_message.message_id}" # <-- Corrigido
                             )
-                            print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 30s.")
+                            print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
                             # --- FIM DA MUDANÇA ---
                             
                         except Exception as e_inner:
