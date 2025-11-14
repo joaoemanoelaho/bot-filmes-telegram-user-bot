@@ -248,7 +248,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"📺 *{series_title}*\n"
                             f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
                             f"---\n"
-                            f"🍿 Assistido com @{bot_username}"
+                            f"🍿 Assistido com @{bot_username}\n"
                             f"⚠️ *Este vídeo será apagado em 4 horas.*"
                         )
 
@@ -337,16 +337,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                                     # --- MUDANÇA 3: Agendamento do Plano B ---
                                     job_data = {
-                                        'chat_id': copied_message.chat_id,
+                                        'chat_id': user.id,  # <-- Corrigido
                                         'message_id': copied_message.message_id
                                     }
                                     context.job_queue.run_once(
                                         delete_message_job, 
-                                        when=30, # 4 horas
+                                        when=30, # Teste de 30 segundos
                                         data=job_data,
-                                        name=f"del_{copied_message.chat_id}_{copied_message.message_id}"
+                                        name=f"del_{user.id}_{copied_message.message_id}" # <-- Corrigido
                                     )
-                                    print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
+                                    print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 30s.")
                                     # --- FIM DA MUDANÇA ---
                                     
                                 except Exception as e_inner:
@@ -715,7 +715,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"🎬 *{movie['title']}* ({movie['year']})\n\n"
                     f"🎭 *Gênero:* {movie['genre']}\n\n"
                     f"---\n"
-                    f"🍿 Assistido com @{bot_username}"
+                    f"🍿 Assistido com @{bot_username}\n"
                     f"⚠️ *Este vídeo será apagado em 4 horas.*"
                 )
                 keyboard = [[
@@ -780,16 +780,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                             # --- MUDANÇA 3: Agendamento do Plano B ---
                             job_data = {
-                                'chat_id': copied_message.chat_id,
+                                'chat_id': query.message.chat.id,  # <-- Corrigido
                                 'message_id': copied_message.message_id
                             }
                             context.job_queue.run_once(
                                 delete_message_job, 
-                                when=30, # 4 horas
+                                when=30, # Teste de 30 segundos
                                 data=job_data,
-                                name=f"del_{copied_message.chat_id}_{copied_message.message_id}"
+                                name=f"del_{query.message.chat.id}_{copied_message.message_id}" # <-- Corrigido
                             )
-                            print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
+                            print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 30s.")
                             # --- FIM DA MUDANÇA ---
                             
                         except Exception as e_inner:
