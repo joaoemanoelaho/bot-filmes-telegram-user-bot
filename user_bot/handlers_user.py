@@ -467,6 +467,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
 
+async def set_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /settext [texto de venda]
+    Usa {PRICE} e {ANCHOR_PRICE} como placeholders.
+    """
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return await update.message.reply_text("Você não tem permissão.")
+        
+    try:
+        # Pega o texto completo depois do comando
+        sales_text = update.message.text.split(' ', 1)[1]
+        
+        if '{PRICE}' not in sales_text or '{ANCHOR_PRICE}' not in sales_text:
+            await update.message.reply_text("⚠️ Atenção: O seu texto não contém os placeholders {PRICE} e {ANCHOR_PRICE}. Salvo mesmo assim.")
+            
+        await db.set_bot_config_value('vip_sales_text', sales_text)
+        
+        await update.message.reply_text(
+            "✅ Novo texto de venda salvo!\n\n"
+            f"**Preview:**\n{sales_text.format(PRICE='R$ X.XX', ANCHOR_PRICE='R$ Y.YY')}",
+            parse_mode="Markdown"
+        )
+    except IndexError:
+        await update.message.reply_text(
+            "Erro: Você precisa enviar o texto.\n"
+            "Ex: /settext Novo texto de venda com {PRICE}!"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Erro ao salvar: {e}")
+
 async def set_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     /setconfig [preço] [âncora] [dias]
