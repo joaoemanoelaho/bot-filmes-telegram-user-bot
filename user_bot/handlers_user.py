@@ -460,12 +460,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
 
+        config = await db.get_bot_config()
+        price = config.get('vip_price', 4.99)
+        is_free = price <= 0
+        user_is_vip = await db.is_user_vip(user.id)
+
+        # Começa o teclado SÓ com o botão de busca
         keyboard = [
             [InlineKeyboardButton("Buscar Mídia 🔎", switch_inline_query_current_chat=""),],
-            [InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")],
-            [InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
-             InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
         ]
+        
+        # SÓ adiciona o botão "Adquirir VIP" se...
+        # 1. O bot NÃO estiver no modo "grátis" E
+        # 2. O usuário AINDA NÃO for VIP
+        if not is_free and not user_is_vip:
+            keyboard.append([InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")])
+        
+        # Adiciona os outros botões
+        keyboard.extend([
+            [InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
+            InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
+        ])
+        
         main_menu = InlineKeyboardMarkup(keyboard)
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
         community_text = (
