@@ -76,9 +76,7 @@ async def startup():
             sock_read=600, 
             sock_connect=60
         )
-        
-        # A classe AiohttpRequest aceita 'proxy' para URLs HTTP/HTTPS
-        # Isso NÃO vai dar o erro SOCKS, pois seu proxy é HTTP.
+    
         request_motor = AiohttpRequest(
             client_timeout=timeout, 
             connection_pool_size=256, 

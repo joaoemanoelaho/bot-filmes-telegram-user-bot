@@ -183,16 +183,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
                     if not await db.is_user_vip(user.id):
                         # --- MUDANÇA (v7.0): Usa o helper ---
-                        context.user_data['update'] = update # Salva o update para o helper
-                        sales_text, reply_markup = await _get_vip_sales_message(context)
-                        await context.bot.send_message(
-                            chat_id=user.id,
-                            text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
-                            parse_mode="Markdown",
-                            reply_markup=reply_markup
-                        )
-                        # --- FIM DA MUDANÇA ---
-                        return
+                        config = await db.get_bot_config()
+                        price = config.get('vip_price', 4.99)
+                        duration_days = config.get('vip_duration_days', 7)
+
+                        if price <= 0:
+                            # É GRÁTIS!
+                            await db.set_user_as_vip(user.id, duration_days=duration_days if duration_days > 0 else 9999)
+                            try:
+                                # Tenta enviar uma mensagem nova
+                                await context.bot.send_message(chat_id=user.id, text="🎉 Bem-vindo! O acesso está gratuito no momento. Carregando...")
+                            except Exception:
+                                pass # Se falhar, não importa, o código continua
+                            
+                            # NÃO damos 'return', o código continua e libera o acesso
+                        else:
+                            # É PAGO! (Esta é a lógica antiga)
+                            context.user_data['update'] = update
+                            sales_text, reply_markup = await _get_vip_sales_message(context)
+                            
+                            # A LINHA CORRETA PARA ESTE LUGAR
+                            await context.bot.send_message( 
+                                chat_id=user.id,
+                                text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
+                                parse_mode="Markdown",
+                                reply_markup=reply_markup
+                            )
+                            return # <-- IMPORTANTE: Bloqueia o usuário
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
 
@@ -333,16 +350,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     # --- VERIFICAÇÃO DE VIP ---
                     if not await db.is_user_vip(user.id):
                         # --- MUDANÇA (v7.0): Usa o helper ---
-                        context.user_data['update'] = update
-                        sales_text, reply_markup = await _get_vip_sales_message(context)
-                        await context.bot.send_message(
-                            chat_id=user.id,
-                            text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
-                            parse_mode="Markdown",
-                            reply_markup=reply_markup
-                        )
-                        # --- FIM DA MUDANÇA ---
-                        return
+                        config = await db.get_bot_config()
+                        price = config.get('vip_price', 4.99)
+                        duration_days = config.get('vip_duration_days', 7)
+
+                        if price <= 0:
+                            # É GRÁTIS!
+                            await db.set_user_as_vip(user.id, duration_days=duration_days if duration_days > 0 else 9999)
+                            try:
+                                # Tenta enviar uma mensagem nova
+                                await context.bot.send_message(chat_id=user.id, text="🎉 Bem-vindo! O acesso está gratuito no momento. Carregando...")
+                            except Exception:
+                                pass # Se falhar, não importa, o código continua
+                            
+                            # NÃO damos 'return', o código continua e libera o acesso
+                        else:
+                            # É PAGO! (Esta é a lógica antiga)
+                            context.user_data['update'] = update
+                            sales_text, reply_markup = await _get_vip_sales_message(context)
+                            
+                            # A LINHA CORRETA PARA ESTE LUGAR
+                            await context.bot.send_message( 
+                                chat_id=user.id,
+                                text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
+                                parse_mode="Markdown",
+                                reply_markup=reply_markup
+                            )
+                            return # <-- IMPORTANTE: Bloqueia o usuário
                     # --- FIM DA VERIFICAÇÃO ---
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
@@ -437,13 +471,23 @@ async def set_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """
     /setconfig [preço] [âncora] [dias]
     Ex: /setconfig 4.99 14.99 7
+    Ex: /setconfig gratis 0 9999
     """
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         return await update.message.reply_text("Você não tem permissão.")
         
     try:
-        price = float(context.args[0])
+        # --- INÍCIO DA MUDANÇA ---
+        price_str = context.args[0].lower()
+        price = 0.0
+
+        if price_str == "gratis":
+            price = 0.0
+        else:
+            price = float(price_str)
+        # --- FIM DA MUDANÇA ---
+
         anchor_price = float(context.args[1])
         duration = int(context.args[2])
         
@@ -451,48 +495,22 @@ async def set_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await db.set_bot_config_value('vip_anchor_price', anchor_price)
         await db.set_bot_config_value('vip_duration_days', duration)
         
+        price_text = f"R$ {price:,.2f}"
+        if price == 0:
+            price_text = "Gratuito (R$ 0,00)"
+        
         await update.message.reply_text(
             "✅ Configuração de VIP atualizada!\n\n"
-            f"Preço: R$ {price:,.2f}\n"
+            f"Preço: **{price_text}**\n"
             f"Âncora (De): R$ {anchor_price:,.2f}\n"
             f"Duração: {duration} dias"
         )
     except (IndexError, ValueError):
         await update.message.reply_text(
             "Erro: Use o formato correto.\n"
-            "/setconfig [preço] [âncora] [dias]\n"
-            "Ex: /setconfig 4.99 14.99 7"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"Erro ao salvar: {e}")
-
-async def set_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    /settext [texto de venda]
-    Usa {PRICE} e {ANCHOR_PRICE} como placeholders.
-    """
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return await update.message.reply_text("Você não tem permissão.")
-        
-    try:
-        # Pega o texto completo depois do comando
-        sales_text = update.message.text.split(' ', 1)[1]
-        
-        if '{PRICE}' not in sales_text or '{ANCHOR_PRICE}' not in sales_text:
-            await update.message.reply_text("⚠️ Atenção: O seu texto não contém os placeholders {PRICE} e {ANCHOR_PRICE}. Salvo mesmo assim.")
-            
-        await db.set_bot_config_value('vip_sales_text', sales_text)
-        
-        await update.message.reply_text(
-            "✅ Novo texto de venda salvo!\n\n"
-            f"**Preview:**\n{sales_text.format(PRICE='R$ X.XX', ANCHOR_PRICE='R$ Y.YY')}",
-            parse_mode="Markdown"
-        )
-    except IndexError:
-        await update.message.reply_text(
-            "Erro: Você precisa enviar o texto.\n"
-            "Ex: /settext Novo texto de venda com {PRICE}!"
+            "/setconfig [preço ou 'gratis'] [âncora] [dias]\n"
+            "Ex: /setconfig 4.99 14.99 7\n"
+            "Ex: /setconfig gratis 0 9999"
         )
     except Exception as e:
         await update.message.reply_text(f"Erro ao salvar: {e}")
@@ -521,16 +539,33 @@ async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_
         await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
         if not await db.is_user_vip(user_id):
-            # --- MUDANÇA (v7.0): Usa o helper ---
-            context.user_data['update'] = update
-            sales_text, reply_markup = await _get_vip_sales_message(context)
-            await update.message.reply_text(
-                text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
-                parse_mode="Markdown",
-                reply_markup=reply_markup
-            )
-            # --- FIM DA MUDANÇA ---
-            return
+            config = await db.get_bot_config()
+            price = config.get('vip_price', 4.99)
+            duration_days = config.get('vip_duration_days', 7)
+
+            if price <= 0:
+                # É GRÁTIS!
+                await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+                try:
+                    # Tenta enviar uma mensagem nova
+                    await context.bot.send_message(chat_id=user_id, text="🎉 Bem-vindo! O acesso está gratuito no momento. Carregando...")
+                except Exception:
+                    pass # Se falhar, não importa, o código continua
+                
+                # NÃO damos 'return', o código continua e libera o acesso
+            else:
+                # É PAGO! (Esta é a lógica antiga)
+                context.user_data['update'] = update
+                sales_text, reply_markup = await _get_vip_sales_message(context)
+                
+                # A LINHA CORRETA PARA ESTE LUGAR
+                await context.bot.send_message( 
+                    chat_id=user_id,
+                    text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+                return # <-- IMPORTANTE: Bloqueia o usuário
 
         context.user_data['state'] = 'awaiting_request'
         await update.message.reply_text(
@@ -726,19 +761,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await db.get_or_create_user(user_id=update.effective_user.id, first_name=update.effective_user.first_name)
 
             if not await db.is_user_vip(user_id):
-                # --- MUDANÇA (v7.0): Usa o helper ---
-                await safe_call(query, "answer")
-                sales_text, reply_markup = await _get_vip_sales_message(context)
-                
-                try:
-                    await safe_call(query, "edit_message_text",
+                config = await db.get_bot_config()
+                price = config.get('vip_price', 4.99)
+                duration_days = config.get('vip_duration_days', 7)
+
+                if price <= 0:
+                    # É GRÁTIS!
+                    await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+                    await safe_call(query, "answer", text="🎉 Acesso gratuito ativado! Carregando...")
+                    
+                    # NÃO damos 'return', o código continua
+                else:
+                    # É PAGO! (Esta é a lógica antiga)
+                    context.user_data['update'] = update
+                    sales_text, reply_markup = await _get_vip_sales_message(context)
+                    
+                    # A LINHA CORRETA
+                    await safe_call(query, "edit_message_text", 
                         text=f"Opa, {query.from_user.first_name}! 👋\n\n{sales_text}",
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                except Exception: pass
-                # --- FIM DA MUDANÇA ---
-                return
+                    return # <-- IMPORTANTE: Bloqueia o usuário
 
             # --- MUDANÇA ---
             await safe_call(query, "answer")
@@ -757,18 +801,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             if not await db.is_user_vip(user_id):
                 # --- MUDANÇA (v7.0): Usa o helper ---
-                await safe_call(query, "answer")
-                sales_text, reply_markup = await _get_vip_sales_message(context)
-                
-                try:
-                    await safe_call(query, "edit_message_text",
+                config = await db.get_bot_config()
+                price = config.get('vip_price', 4.99)
+                duration_days = config.get('vip_duration_days', 7)
+
+                if price <= 0:
+                    # É GRÁTIS!
+                    await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+                    await safe_call(query, "answer", text="🎉 Acesso gratuito ativado! Carregando...")
+                    
+                    # NÃO damos 'return', o código continua
+                else:
+                    # É PAGO! (Esta é a lógica antiga)
+                    context.user_data['update'] = update
+                    sales_text, reply_markup = await _get_vip_sales_message(context)
+                    
+                    # A LINHA CORRETA
+                    await safe_call(query, "edit_message_text", 
                         text=f"Opa, {query.from_user.first_name}! 👋\n\n{sales_text}",
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                except Exception: pass
-                # --- FIM DA MUDANÇA ---
-                return
+                    return # <-- IMPORTANTE: Bloqueia o usuário
 
             # --- MUDANÇA ---
             await safe_call(query, "answer")
@@ -911,11 +965,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         async with DB_SEMAPHORE:
             await safe_call(query, "answer")
 
+            
+            config = await db.get_bot_config()
+            price = config.get('vip_price', 4.99)
+            duration_days = config.get('vip_duration_days', 7)
+
             # (Verificação de VIP de novo, por segurança)
             if await db.is_user_vip(user_id):
                 try:
                     await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
                 except Exception: pass
+                return
+            
+            if price <= 0:
+                # O admin mudou para 'gratis' enquanto o usuário olhava o menu
+                await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+                await safe_call(query, "edit_message_text", text="🎉 Boas notícias! O acesso agora é gratuito. Seu VIP foi ativado!")
                 return
             
             # Lógica de verificação de pagamento pendente
@@ -1146,7 +1211,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         offset=current_offset
                     )
 
-                    if not is_vip:
+                    config = await db.get_bot_config()
+                    price = config.get('vip_price', 4.99)
+                    is_free = price <= 0
+
+                    if not is_vip and not is_free:
                         # --- MUDANÇA (v7.0): Aponta para o /start?vip ---
                         results.append(
                             InlineQueryResultArticle(
@@ -1437,16 +1506,33 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
         if not await db.is_user_vip(user_id):
             # --- MUDANÇA (v7.0): Usa o helper ---
-            context.user_data['update'] = update
-            sales_text, reply_markup = await _get_vip_sales_message(context)
-            await context.bot.send_message(
-                chat_id=chat_id_to_reply,
-                text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-            # --- FIM DA MUDANÇA ---
-            return
+            config = await db.get_bot_config()
+            price = config.get('vip_price', 4.99)
+            duration_days = config.get('vip_duration_days', 7)
+
+            if price <= 0:
+                # É GRÁTIS!
+                await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+                try:
+                    # Tenta enviar uma mensagem nova
+                    await context.bot.send_message(chat_id=user_id, text="🎉 Bem-vindo! O acesso está gratuito no momento. Carregando...")
+                except Exception:
+                    pass # Se falhar, não importa, o código continua
+                
+                # NÃO damos 'return', o código continua e libera o acesso
+            else:
+                # É PAGO! (Esta é a lógica antiga)
+                context.user_data['update'] = update
+                sales_text, reply_markup = await _get_vip_sales_message(context)
+                
+                # A LINHA CORRETA PARA ESTE LUGAR
+                await context.bot.send_message( 
+                    chat_id=user_id,
+                    text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+                return # <-- IMPORTANTE: Bloqueia o usuário
 
         movie = await db.get_movie_by_id(movie_id)
 
