@@ -481,18 +481,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             [InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"),
             InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]
         ])
-        
+
         main_menu = InlineKeyboardMarkup(keyboard)
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
+        ads_channel_link = "https://t.me/meucinepipocacanal"
+
+        ads_channel_text = (
+            "Para manter o bot 100% gratuito, preciso da sua ajuda!\n"
+            f"➡️ <a href=\"{ads_channel_link}\"><b>Entre no nosso Canal de Avisos</b></a> ⬅️\n"
+            "É lá que posto os anúncios que pagam o servidor."
+        )
+        
         community_text = (
             "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
             f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
         )
         welcome_text = (
             f"Olá {user.mention_html()}! 👋\n\n"
+            "🍿 **ÓTIMA NOTÍCIA: O BOT AGORA É 100% GRATUITO!** 🍿\n\n"
             "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
             "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
             "Ficou com dúvidas? Envie o comando /help\n\n"
+            "--------------------\n\n"
+            f"{ads_channel_text}\n\n"
             "--------------------\n\n"
             f"{community_text}"
         )
