@@ -287,8 +287,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             keyboard.append(nav_row)
 
                         keyboard.append([
-                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series"), InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ],
-                            [ InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}") ]
+                            InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series"),
+                            InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}")
+                        ])
+
+                        # 3. Adiciona o Botão Salvar (Embaixo)
+                        keyboard.append([
+                            InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}")
                         ])
                         
                         video_reply_markup = InlineKeyboardMarkup(keyboard)
