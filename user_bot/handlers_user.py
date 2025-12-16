@@ -756,10 +756,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"🍿 Assistido com @{bot_username}\n"
                     f"⚠️ *Este vídeo será apagado em 4 horas.*"
                 )
+
+                # 1. Gera o código único: mov_{id}_{audio}
+                fav_unique_code = f"mov_{movie_id}_{audio_choice}"
+
+                # 2. Verifica se já é favorito para decidir o texto do botão
+                is_fav = await db.is_favorite(user_id, fav_unique_code)
+                fav_btn_text = "❌ Remover da Lista" if is_fav else "🔖 Salvar na Lista"
+
                 keyboard = [[
                     InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"{movie['title']}"),
                     InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{movie_id}")
-                ]]
+                    ],
+                    [InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}")]
+                ]
+                
                 video_reply_markup = InlineKeyboardMarkup(keyboard)
 
                 try:
@@ -1246,7 +1257,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             favorites = await db.get_user_favorites(user_id)
             
             if not favorites:
-                await safe_call(query, "answer", text="Sua lista está vazia 🗑️\nUse o botão 'Salvar na Lista' ao assistir algo.", show_alert=True)
+
+                empty_text = (
+                "📭 **Sua lista está vazia! 🗑️**\n\n"
+                "Para adicionar itens, navegue pelo bot e clique no botão **'🔖 Salvar na Lista'** "
+                "que aparece embaixo dos vídeos."
+                )
+
+                keyboard_empty = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
+            
+                await safe_call(query, "edit_message_text",
+                    text=empty_text,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(keyboard_empty)
+                )
                 return
 
             keyboard = []
@@ -1351,13 +1375,69 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await safe_call(query, "delete_message")
             status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔄 Recuperando **{fav_item['title']}**...")
             
-            # Recria o botão de remover/salvar
-            video_markup = await get_fav_keyboard_markup(user_id, unique_code)
+            # --- CONSTRUÇÃO DOS BOTÕES DE NAVEGAÇÃO ---
+            base_keyboard = []
+            
+            # Identifica se é Filme ou Série pelo código (mov_... ou ep_...)
+            if unique_code.startswith("ep_"):
+                # É SÉRIE: Precisamos calcular Anterior/Próximo
+                try:
+                    parts = unique_code.split('_')
+                    episode_id = int(parts[1])
+                    
+                    # Busca detalhes completos para saber a temporada
+                    ep_details = await db.get_full_episode_details(episode_id)
+                    
+                    if ep_details:
+                        season = ep_details.get('seasons')
+                        if season:
+                            season_id = season.get('id')
+                            current_ep_num = ep_details.get('episode_number', 0)
+                            series_id = season.get('series_id')
+
+                            # Busca vizinhos em paralelo
+                            prev_ep, next_ep = await asyncio.gather(
+                                db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
+                                db.get_neighbor_episode(season_id, current_ep_num, 'next')
+                            )
+                            
+                            nav_row = []
+                            if prev_ep:
+                                nav_row.append(InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}"))
+                            if next_ep:
+                                nav_row.append(InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_ep['id']}"))
+                            
+                            if nav_row:
+                                base_keyboard.append(nav_row)
+                            
+                            # Botões extras de série
+                            base_keyboard.append([
+                                InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id}_series"),
+                                InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}")
+                            ])
+                except Exception as e:
+                    print(f"[FAV] Erro ao gerar navegação de série: {e}")
+            
+            else:
+                # É FILME: Botões padrão de filme
+                try:
+                    parts = unique_code.split('_')
+                    movie_id = int(parts[1])
+                    base_keyboard.append([
+                        InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{movie_id}"),
+                        InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=fav_item['title'])
+                    ])
+                except: pass
+
+            # --- GERA O BOTÃO "REMOVER DA LISTA" E JUNTA TUDO ---
+            # A função helper vai pegar nosso base_keyboard e adicionar o botão [X Remover]
+            video_markup = await get_fav_keyboard_markup(user_id, unique_code, base_keyboard)
+            
             caption_text = f"🍿 **{fav_item['title']}**\n\n🔖 Recuperado da Minha Lista.\n⚠️ *Apaga em 4 horas.*"
 
-            # --- LÓGICA DE ENVIO (PLANO A + PLANO B) ---
+            # --- ENVIO COM SEGURANÇA (PLANO A + B) ---
             try:
-                # PLANO A: Enviar pelo File ID
+                # PLANO A: File ID
                 print(f"[FAV] Plano A: File ID {str(fav_item['file_id'])[:15]}...")
                 sent_message = await context.bot.send_video(
                     chat_id=user_id,
@@ -1368,15 +1448,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     protect_content=True
                 )
                 
-                # Agenda deleção
                 job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
                 context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{sent_message.message_id}")
                 
             except BadRequest as e:
                 error_text = str(e).lower()
-                # Se falhar o file_id, tenta o Plano B
                 if ("wrong file id" in error_text or "wrong file identifier" in error_text) and fav_item['message_id'] and fav_item['channel_id']:
                     
+                    # PLANO B: Cópia
                     print(f"[FAV] 🚨 Plano B: Copiando msg {fav_item['message_id']} do canal {fav_item['channel_id']}")
                     try:
                         copied_message = await context.bot.copy_message(
@@ -1386,7 +1465,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             protect_content=True
                         )
                         
-                        # Edita o caption da cópia
                         await context.bot.edit_message_caption(
                             chat_id=user_id,
                             message_id=copied_message.message_id,
@@ -1395,16 +1473,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             reply_markup=video_markup
                         )
                         
-                        # Agenda deleção
                         job_data = {'chat_id': user_id, 'message_id': copied_message.message_id}
                         context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{copied_message.message_id}")
                         
                     except Exception as e_inner:
-                        print(f"[FAV] ❌ Falha total (Plano B): {e_inner}")
+                        print(f"[FAV] ❌ Falha total: {e_inner}")
                         await status_msg.edit_text("❌ Erro fatal: O arquivo original foi apagado do canal.")
                         return
                 else:
-                    print(f"[FAV] Erro genérico (sem Plano B): {e}")
+                    print(f"[FAV] Erro genérico: {e}")
                     await status_msg.edit_text("❌ Erro ao enviar vídeo.")
                     return
 
