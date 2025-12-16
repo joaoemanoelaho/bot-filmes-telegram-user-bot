@@ -281,13 +281,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         fav_btn_text = "❌ Remover da Lista" if is_fav else "🔖 Salvar na Lista"
                         # ---------------------------------
 
-                        keyboard = [
-                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ],
-                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ],
-                            [ InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}") ]
-                        ]
                         if nav_row:
                             keyboard.append(nav_row)
+
+                        keyboard = [
+                            [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series"), InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ],
+                            [ InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}") ]
+                        ]
+                        
                         video_reply_markup = InlineKeyboardMarkup(keyboard)
 
                         try:
