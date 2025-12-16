@@ -273,9 +273,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             )
                         # --- FIM DA CORREÇÃO ---
 
+                        # Cria o código único: ep_{id}_{audio}
+                        fav_unique_code = f"ep_{episode_id}_{audio_type}"
+                        
+                        # Verifica se já é favorito para decidir o texto do botão
+                        is_fav = await db.is_favorite(user.id, fav_unique_code)
+                        fav_btn_text = "❌ Remover da Lista" if is_fav else "🔖 Salvar na Lista"
+                        # ---------------------------------
+
                         keyboard = [
                             [ InlineKeyboardButton("🍿 Relacionados", callback_data=f"related_{series_id_for_related}_series") ],
-                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ]
+                            [ InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=f"ep_card:{episode_id}") ],
+                            [ InlineKeyboardButton(fav_btn_text, callback_data=f"fav_toggle_{fav_unique_code}") ]
                         ]
                         if nav_row:
                             keyboard.append(nav_row)
@@ -475,6 +484,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # 2. O usuário AINDA NÃO for VIP
         if not is_free and not user_is_vip:
             keyboard.append([InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")])
+
+        keyboard.append([InlineKeyboardButton("🔖 Minha Lista", callback_data="fav_menu")])
         
         # Adiciona os outros botões
         keyboard.extend([
@@ -1229,6 +1240,176 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             else:
                 await placeholder_msg.edit_text(message_text)
 
+    elif callback_data == "fav_menu":
+        async with DB_SEMAPHORE:
+            await safe_call(query, "answer")
+            favorites = await db.get_user_favorites(user_id)
+            
+            if not favorites:
+                await safe_call(query, "answer", text="Sua lista está vazia 🗑️\nUse o botão 'Salvar na Lista' ao assistir algo.", show_alert=True)
+                return
+
+            keyboard = []
+            for fav in favorites:
+                # Botão com nome cortado
+                title_display = fav['title'][:30]
+                icon = '🎬' if fav['media_type'] == 'movie' else '📺'
+                keyboard.append([InlineKeyboardButton(f"{icon} {title_display}", callback_data=f"fav_watch_{fav['unique_code']}")])
+            
+            keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="back_to_main")])
+            
+            await safe_call(query, "edit_message_text",
+                text=f"🔖 **Minha Lista ({len(favorites)}/10)**\n\nToque para assistir:",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+    elif callback_data.startswith("fav_toggle_"):
+        async with DB_SEMAPHORE:
+            unique_code = callback_data.replace("fav_toggle_", "")
+            
+            # Se já é favorito -> REMOVE
+            if await db.is_favorite(user_id, unique_code):
+                await db.remove_favorite(user_id, unique_code)
+                msg_text = "🗑️ Removido da lista."
+            
+            # Se não é -> ADICIONA
+            else:
+                # Recupera dados para salvar
+                parts = unique_code.split('_') # ex: mov_123_dub
+                media_type_prefix = parts[0]
+                media_id = int(parts[1])
+                audio = parts[2]
+                
+                data_to_save = {
+                    'unique_code': unique_code,
+                    'media_type': 'movie' if media_type_prefix == 'mov' else 'episode',
+                    'title': 'Desconhecido',
+                    'file_id': None,
+                    'message_id': None,
+                    'channel_id': None
+                }
+
+                # Busca dados frescos no DB
+                if media_type_prefix == 'mov':
+                    movie = await db.get_movie_by_id(media_id)
+                    if movie:
+                        data_to_save['title'] = movie['title']
+                        if audio == 'dub':
+                            data_to_save['file_id'] = movie['dubbed_file_id']
+                            data_to_save['message_id'] = movie['dubbed_msg_id']
+                        else:
+                            data_to_save['file_id'] = movie['subtitled_file_id']
+                            data_to_save['message_id'] = movie['subtitled_msg_id']
+                        data_to_save['channel_id'] = STORAGE_CHANNEL_ID 
+                else:
+                    ep_details = await db.get_full_episode_details(media_id)
+                    if ep_details:
+                        season = ep_details.get('seasons', {})
+                        series = season.get('series', {})
+                        s_num = season.get('season_number', 0)
+                        e_num = ep_details.get('episode_number', 0)
+                        data_to_save['title'] = f"{series.get('title')} S{s_num:02d}E{e_num:02d}"
+                        
+                        if audio == 'dub':
+                            data_to_save['file_id'] = ep_details['dubbed_file_id']
+                            data_to_save['message_id'] = ep_details['dubbed_msg_id']
+                        else:
+                            data_to_save['file_id'] = ep_details['subtitled_file_id']
+                            data_to_save['message_id'] = ep_details['subtitled_msg_id']
+                        data_to_save['channel_id'] = STORAGE_CHANNEL_ID_SERIES
+
+                if data_to_save['file_id']:
+                    res = await db.add_favorite(user_id, data_to_save)
+                    if res == 'limit_reached':
+                        await safe_call(query, "answer", text="⚠️ Limite de 10 itens atingido!", show_alert=True)
+                        return
+                    elif res == 'error':
+                        await safe_call(query, "answer", text="Erro ao salvar.", show_alert=True)
+                        return
+                    msg_text = "✅ Salvo na lista!"
+                else:
+                    await safe_call(query, "answer", text="Erro: Mídia não encontrada.", show_alert=True)
+                    return
+
+            # Atualiza o botão visualmente (Toggle)
+            current_markup = query.message.reply_markup.inline_keyboard if query.message.reply_markup else None
+            new_markup = await get_fav_keyboard_markup(user_id, unique_code, current_markup)
+            
+            await safe_call(query, "answer", text=msg_text)
+            await safe_call(query, "edit_message_reply_markup", reply_markup=new_markup)
+
+    elif callback_data.startswith("fav_watch_"):
+        async with DB_SEMAPHORE:
+            unique_code = callback_data.replace("fav_watch_", "")
+            fav_item = await db.get_favorite_item(user_id, unique_code)
+            
+            if not fav_item:
+                await safe_call(query, "answer", text="Erro: Item não encontrado.", show_alert=True)
+                return
+
+            await safe_call(query, "delete_message")
+            status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔄 Recuperando **{fav_item['title']}**...")
+            
+            # Recria o botão de remover/salvar
+            video_markup = await get_fav_keyboard_markup(user_id, unique_code)
+            caption_text = f"🍿 **{fav_item['title']}**\n\n🔖 Recuperado da Minha Lista.\n⚠️ *Apaga em 4 horas.*"
+
+            # --- LÓGICA DE ENVIO (PLANO A + PLANO B) ---
+            try:
+                # PLANO A: Enviar pelo File ID
+                print(f"[FAV] Plano A: File ID {str(fav_item['file_id'])[:15]}...")
+                sent_message = await context.bot.send_video(
+                    chat_id=user_id,
+                    video=fav_item['file_id'],
+                    caption=caption_text,
+                    parse_mode="Markdown",
+                    reply_markup=video_markup,
+                    protect_content=True
+                )
+                
+                # Agenda deleção
+                job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
+                context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{sent_message.message_id}")
+                
+            except BadRequest as e:
+                error_text = str(e).lower()
+                # Se falhar o file_id, tenta o Plano B
+                if ("wrong file id" in error_text or "wrong file identifier" in error_text) and fav_item['message_id'] and fav_item['channel_id']:
+                    
+                    print(f"[FAV] 🚨 Plano B: Copiando msg {fav_item['message_id']} do canal {fav_item['channel_id']}")
+                    try:
+                        copied_message = await context.bot.copy_message(
+                            chat_id=user_id,
+                            from_chat_id=fav_item['channel_id'],
+                            message_id=fav_item['message_id'],
+                            protect_content=True
+                        )
+                        
+                        # Edita o caption da cópia
+                        await context.bot.edit_message_caption(
+                            chat_id=user_id,
+                            message_id=copied_message.message_id,
+                            caption=caption_text,
+                            parse_mode="Markdown",
+                            reply_markup=video_markup
+                        )
+                        
+                        # Agenda deleção
+                        job_data = {'chat_id': user_id, 'message_id': copied_message.message_id}
+                        context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{copied_message.message_id}")
+                        
+                    except Exception as e_inner:
+                        print(f"[FAV] ❌ Falha total (Plano B): {e_inner}")
+                        await status_msg.edit_text("❌ Erro fatal: O arquivo original foi apagado do canal.")
+                        return
+                else:
+                    print(f"[FAV] Erro genérico (sem Plano B): {e}")
+                    await status_msg.edit_text("❌ Erro ao enviar vídeo.")
+                    return
+
+            await status_msg.delete()
+
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
@@ -1851,6 +2032,37 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     help_text = help_text.replace("@username", f"@{context.bot.username}")
     await update.message.reply_text(help_text, parse_mode="Markdown")
+
+async def get_fav_keyboard_markup(user_id, unique_code, current_keyboard=None):
+    """
+    Adiciona ou atualiza o botão de Favoritos em um teclado existente.
+    """
+    is_fav = await db.is_favorite(user_id, unique_code)
+    
+    btn_text = "❌ Remover da Lista" if is_fav else "🔖 Salvar na Lista"
+    callback = f"fav_toggle_{unique_code}"
+    
+    fav_button = [InlineKeyboardButton(btn_text, callback_data=callback)]
+    
+    if current_keyboard:
+        new_keyboard = []
+        replaced = False
+        for row in current_keyboard:
+            new_row = []
+            for btn in row:
+                # Se encontrar um botão antigo de fav, substitui
+                if btn.callback_data and btn.callback_data.startswith("fav_toggle_"):
+                    new_row.append(InlineKeyboardButton(btn_text, callback_data=callback))
+                    replaced = True
+                else:
+                    new_row.append(btn)
+            new_keyboard.append(new_row)
+        
+        if not replaced:
+            new_keyboard.append(fav_button)
+        return InlineKeyboardMarkup(new_keyboard)
+    else:
+        return InlineKeyboardMarkup([fav_button])
 
 # --- Definição dos Handlers (Sem mudança) ---
 start_handler = CommandHandler("start", start)

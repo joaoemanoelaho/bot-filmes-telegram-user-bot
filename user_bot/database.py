@@ -634,3 +634,113 @@ async def update_episode_file_id_only(episode_id: int, new_file_id: str, audio_t
     except Exception as e:
         print(f"❌ [Auto-Cura] Erro ao atualizar file_id do episódio {episode_id}: {e}")
         return False
+    
+# =================================================================
+# === SISTEMA DE FAVORITOS (SUPABASE) ===
+# =================================================================
+
+async def add_favorite(user_id: int, data: dict) -> str:
+    """
+    Adiciona aos favoritos respeitando o limite de 10.
+    Retorna: 'success', 'limit_reached', 'exists' ou 'error'
+    """
+    if not supabase: return "error"
+
+    try:
+        # 1. Checa o limite (Count)
+        count_response = await asyncio.to_thread(
+            supabase.table('favorites')
+            .select('unique_code', count='exact')
+            .eq('user_id', user_id)
+            .execute
+        )
+        count = count_response.count if count_response.count is not None else len(count_response.data)
+        
+        if count >= 10:
+            # Verifica se JÁ existe antes de dar erro de limite (para não bloquear remoção/toggle)
+            exists_response = await asyncio.to_thread(
+                supabase.table('favorites').select('unique_code').eq('user_id', user_id).eq('unique_code', data['unique_code']).execute
+            )
+            if exists_response.data:
+                return "exists" # Já existe, ok
+            return "limit_reached"
+
+        # 2. Adiciona (upsert=False para falhar se existir, ou ignoramos erro de PK)
+        await asyncio.to_thread(
+            supabase.table('favorites').upsert({
+                'user_id': user_id,
+                'unique_code': data['unique_code'],
+                'media_type': data['media_type'],
+                'title': data['title'],
+                'file_id': data['file_id'],
+                'message_id': data['message_id'],
+                'channel_id': data['channel_id']
+            }, on_conflict='user_id, unique_code').execute
+        )
+        return "success"
+
+    except Exception as e:
+        print(f"Erro ao salvar favorito no Supabase: {e}")
+        return "error"
+
+async def remove_favorite(user_id: int, unique_code: str):
+    """Remove um item da lista."""
+    if not supabase: return
+    try:
+        await asyncio.to_thread(
+            supabase.table('favorites')
+            .delete()
+            .eq('user_id', user_id)
+            .eq('unique_code', unique_code)
+            .execute
+        )
+    except Exception as e:
+        print(f"Erro ao remover favorito: {e}")
+
+async def get_user_favorites(user_id: int) -> list[dict]:
+    """Retorna a lista de favoritos do usuário."""
+    if not supabase: return []
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('favorites')
+            .select('*')
+            .eq('user_id', user_id)
+            .order('added_at', desc=True)
+            .execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar favoritos: {e}")
+        return []
+
+async def get_favorite_item(user_id: int, unique_code: str) -> dict | None:
+    """Retorna os detalhes de um item específico."""
+    if not supabase: return None
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('favorites')
+            .select('*')
+            .eq('user_id', user_id)
+            .eq('unique_code', unique_code)
+            .single()
+            .execute
+        )
+        return response.data
+    except Exception as e:
+        # print(f"Erro get_favorite_item: {e}")
+        return None
+
+async def is_favorite(user_id: int, unique_code: str) -> bool:
+    """Retorna True se já for favorito."""
+    if not supabase: return False
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('favorites')
+            .select('unique_code')
+            .eq('user_id', user_id)
+            .eq('unique_code', unique_code)
+            .execute
+        )
+        return len(response.data) > 0
+    except Exception:
+        return False
