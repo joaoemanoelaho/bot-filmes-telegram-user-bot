@@ -281,6 +281,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         fav_btn_text = "❌ Remover da Lista" if is_fav else "🔖 Salvar na Lista"
                         # ---------------------------------
 
+                        keyboard = []
+
                         if nav_row:
                             keyboard.append(nav_row)
 
