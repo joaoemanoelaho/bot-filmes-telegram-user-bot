@@ -359,11 +359,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     }
                                     context.job_queue.run_once(
                                         delete_message_job, 
-                                        when=30, # Teste de 30 segundos
+                                        when=14400, # Teste de 4 horas 
                                         data=job_data,
                                         name=f"del_{user.id}_{copied_message.message_id}" # <-- Corrigido
                                     )
-                                    print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 30s.")
+                                    print(f"[JOB] Agendada deleção da msg {copied_message.message_id} (Plano B) em 4h.")
                                     # --- FIM DA MUDANÇA ---
                                     
                                 except Exception as e_inner:
