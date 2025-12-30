@@ -795,25 +795,27 @@ async def get_pending_requests():
         print(f"Erro ao buscar pedidos pendentes: {e}")
         return []
 
-async def update_request_status(request_id, new_status):
-    """Atualiza o status e retorna os dados do pedido (Blindado contra erros de versão)."""
+async def update_request_status(req_id, new_status):
+    """
+    Atualiza o status usando a coluna 'request_id' (baseado nos seus logs).
+    """
     try:
-        # PASSO 1: Busca os dados ANTES de atualizar (para garantir que temos o ID do usuário)
-        # Isso evita o erro do .select() no final do update
-        data_response = supabase.table("requests").select("*").eq("request_id", request_id).execute()
+        # PASSO 1: Busca os dados atuais (Título e User ID)
+        # Atenção: Usando 'request_id' pois foi o que apareceu no seu log de erro anterior
+        data_res = supabase.table("requests").select("*").eq("request_id", req_id).execute()
         
-        if not data_response.data:
+        if not data_res.data:
+            print(f"Pedido {req_id} não encontrado no banco.")
             return None
-            
-        current_data = data_response.data[0]
+
+        current_data = data_res.data[0]
 
         # PASSO 2: Atualiza o status
-        supabase.table("requests").update({"status": new_status}).eq("request_id", request_id).execute()
+        supabase.table("requests").update({"status": new_status}).eq("request_id", req_id).execute()
         
-        # Retorna os dados que pegamos no passo 1 (User ID e Título)
         return current_data
 
     except Exception as e:
-        print(f"Erro ao atualizar status do pedido: {e}")
+        print(f"Erro database update: {e}")
         return None
     

@@ -1496,25 +1496,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await status_msg.delete()
 
     elif callback_data.startswith("adm_approve_") or callback_data.startswith("adm_deny_"):
-        # 🔒 SEGURANÇA: Verifica se quem clicou é Admin
+        # 🔒 SEGURANÇA
         if user_id not in ADMIN_IDS:
             await safe_call(query, "answer", text="🚫 Acesso negado.", show_alert=True)
             return
 
         async with DB_SEMAPHORE:
-            action_type, _, req_id = callback_data.split('_') # ex: adm, approve, 123
+            # CORREÇÃO CRÍTICA AQUI:
+            # O callback é: adm_approve_69
+            parts = callback_data.split('_')
+            # parts[0] = "adm"
+            # parts[1] = "approve" ou "deny"
+            # parts[2] = "69" (ID)
             
-            # Define o status baseado no botão clicado
-            new_status = "added" if action_type == "adm_approve" else "denied"
+            action = parts[1] 
+            req_id = parts[2]
+            
+            # Agora a comparação funciona!
+            new_status = "added" if action == "approve" else "denied"
             
             # 1. Atualiza no Banco
             request_data = await db.update_request_status(req_id, new_status)
             
             if request_data:
                 target_user_id = request_data.get('user_id')
-                title = request_data.get('title')
+                title = request_data.get('title', 'Filme/Série') # Valor padrão se vier None
                 
-                # 2. Notifica o Usuário (Aqui mesmo, sem webhook!)
+                # 2. Notifica o Usuário
                 if target_user_id:
                     try:
                         msg_user = ""
@@ -1530,27 +1538,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 f"Infelizmente, seu pedido para **'{title}'** não pode ser atendido no momento."
                             )
                         
-                        # Envia direto para o usuário
                         await context.bot.send_message(chat_id=target_user_id, text=msg_user, parse_mode="Markdown")
                         admin_feedback = "✅ Usuário notificado."
                     except Exception as e:
                         print(f"Erro ao notificar user {target_user_id}: {e}")
-                        admin_feedback = "⚠️ Status salvo, mas falha ao notificar usuário (bloqueado?)."
+                        admin_feedback = "⚠️ Status salvo, mas falha ao notificar."
                 else:
-                    admin_feedback = "⚠️ ID do usuário não encontrado."
+                    admin_feedback = "⚠️ User ID não achado."
 
-                # 3. Atualiza a mensagem do Admin para ele saber que deu certo
+                # 3. Atualiza a mensagem do Admin
                 emoji_status = "✅ APROVADO" if new_status == "added" else "❌ NEGADO"
-                
-                # Remove os botões e edita o texto
                 original_text = query.message.text
-                new_text = f"{original_text}\n\n🏁 **Processado:** {emoji_status}\nℹ️ {admin_feedback}"
                 
-                await safe_call(query, "edit_message_text", text=new_text, parse_mode="Markdown", reply_markup=None)
+                # Remove os botões para não clicar de novo
+                await safe_call(query, "edit_message_text", 
+                    text=f"{original_text}\n\n🏁 **Processado:** {emoji_status}\nℹ️ {admin_feedback}", 
+                    parse_mode="Markdown", 
+                    reply_markup=None
+                )
             
             else:
-                await safe_call(query, "answer", text="❌ Erro ao atualizar banco. Talvez já processado?", show_alert=True)
-
+                await safe_call(query, "answer", text="❌ Erro ao atualizar. Tente de novo.", show_alert=True)
+                
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
