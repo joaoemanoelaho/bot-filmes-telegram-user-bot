@@ -54,10 +54,6 @@ async def safe_call(obj, method_name, *args, **kwargs):
     except Exception as e:
         print(f"[WARN] Erro em safe_call({method_name}): {e}")
 
-# =================================================================
-# === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
-# =================================================================
-# (Helper da v5.11 - Otimizado)
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
@@ -85,6 +81,60 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
         )
 
         keyboard = []
+        
+        # -------------------------------------------------------------
+        # 1. LÓGICA DE NAVEGAÇÃO (ATUALIZADA PARA PULAR TEMPORADA)
+        # -------------------------------------------------------------
+        season_id = season['id']
+        current_ep_num = episode['episode_number']
+        current_season_num = season['season_number']
+        series_id = series['id']
+
+        # Busca vizinhos normais (mesma temporada)
+        prev_ep, next_ep = await asyncio.gather(
+            db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
+            db.get_neighbor_episode(season_id, current_ep_num, 'next')
+        )
+
+        # LÓGICA "PRÓXIMO": Se não tem ep seguinte, tenta a próxima temporada (Ex: S1 Fim -> S2 Início)
+        if not next_ep:
+            # Pega todas as temporadas da série
+            all_seasons = await db.get_seasons_for_series(series_id)
+            if all_seasons:
+                # Procura a temporada X + 1
+                next_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num + 1), None)
+                if next_season_obj:
+                    # Pega o primeiro episódio da nova temporada
+                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
+                    if eps_next_season:
+                        next_ep = eps_next_season[0]
+
+        # LÓGICA "ANTERIOR": Se não tem ep anterior, tenta a temporada anterior (Ex: S2 Início -> S1 Fim)
+        if not prev_ep and current_season_num > 1:
+            all_seasons = await db.get_seasons_for_series(series_id) # Reutiliza ou busca de novo
+            if all_seasons:
+                prev_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num - 1), None)
+                if prev_season_obj:
+                    # Pega os episódios da temporada anterior (limit alto para garantir que pegue o último)
+                    eps_prev_season, _ = await db.get_episodes_for_season(prev_season_obj['id'], limit=100, offset=0)
+                    if eps_prev_season:
+                        prev_ep = eps_prev_season[-1] # Pega o último da lista
+
+        # Monta a linha de botões de navegação
+        nav_row = []
+        if prev_ep:
+            nav_row.append(InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}"))
+        if next_ep:
+            # Muda o texto se for trocar de temporada
+            btn_text = "Próxima Temp. ⏩" if next_ep['season_id'] != season_id else "Próximo Ep. ⏩"
+            nav_row.append(InlineKeyboardButton(btn_text, callback_data=f"ep_nav_{next_ep['id']}"))
+        
+        if nav_row:
+            keyboard.append(nav_row)
+
+        # -------------------------------------------------------------
+        # 2. BOTÕES DE ÁUDIO (SEU CÓDIGO ORIGINAL)
+        # -------------------------------------------------------------
         audio_row = []
 
         if episode.get('dubbed_file_id'):
@@ -114,7 +164,7 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
         import traceback
         traceback.print_exc()
         return (f"Erro ao carregar detalhes do episódio: {e}", None)
-
+    
 async def _get_vip_sales_message(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyboardMarkup]:
     """
     Busca a configuração de venda do DB e formata a mensagem e os botões.
@@ -261,26 +311,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
                             db.get_neighbor_episode(season_id, current_ep_num, 'next')
                         )
-
-                        # === AQUI ESTÁ A SUA LÓGICA DE MUDANÇA DE TEMPORADA ===
-        
-                        # Se NÃO achou próximo episódio na mesma temporada (significa que é o último)
-                        if not next_ep:
-                            # Busca TODAS as temporadas dessa série
-                            all_seasons = await db.get_seasons_for_series(season_id)
-                            
-                            if all_seasons:
-                                # Procura matematicamente a temporada atual + 1
-                                # Ex: Estou na 1, procuro a 2.
-                                next_season_obj = next((s for s in all_seasons if s['season_number'] == current_ep_num + 1), None)
-                                
-                                if next_season_obj:
-                                    # Se achou a próxima temporada, busca o PRIMEIRO episódio dela (limit=1, offset=0)
-                                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
-                                    
-                                    if eps_next_season:
-                                        # Define esse episódio como o "Próximo"
-                                        next_ep = eps_next_season[0]
 
                         nav_row = []
                         if prev_ep:
