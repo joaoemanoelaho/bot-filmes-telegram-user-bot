@@ -262,6 +262,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             db.get_neighbor_episode(season_id, current_ep_num, 'next')
                         )
 
+                        # === AQUI ESTÁ A SUA LÓGICA DE MUDANÇA DE TEMPORADA ===
+        
+                        # Se NÃO achou próximo episódio na mesma temporada (significa que é o último)
+                        if not next_ep:
+                            # Busca TODAS as temporadas dessa série
+                            all_seasons = await db.get_seasons_for_series(season_id)
+                            
+                            if all_seasons:
+                                # Procura matematicamente a temporada atual + 1
+                                # Ex: Estou na 1, procuro a 2.
+                                next_season_obj = next((s for s in all_seasons if s['season_number'] == current_ep_num + 1), None)
+                                
+                                if next_season_obj:
+                                    # Se achou a próxima temporada, busca o PRIMEIRO episódio dela (limit=1, offset=0)
+                                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
+                                    
+                                    if eps_next_season:
+                                        # Define esse episódio como o "Próximo"
+                                        next_ep = eps_next_season[0]
+
                         nav_row = []
                         if prev_ep:
                             nav_row.append(
