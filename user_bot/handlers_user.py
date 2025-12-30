@@ -1474,25 +1474,58 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             season_id = season.get('id')
                             current_ep_num = ep_details.get('episode_number', 0)
                             series_id = season.get('series_id')
+                            current_season_num = season.get('season_number', 1) # Importante pegar o número da temporada
 
-                            # Busca vizinhos em paralelo
+                            # Busca vizinhos em paralelo (dentro da mesma temporada)
                             prev_ep, next_ep = await asyncio.gather(
                                 db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
                                 db.get_neighbor_episode(season_id, current_ep_num, 'next')
                             )
 
-                            # --- ADICIONE ISSO PARA DESCOBRIR A VERDADE ---
-                            if next_ep:
-                                print(f"👻 O BOT ACHOU UM PRÓXIMO EPISÓDIO! ID: {next_ep.get('id')} | Número: {next_ep.get('episode_number')}")
-                            else:
-                                print("✅ O bot NÃO achou próximo episódio. Deveria pular a temporada.")
-                            # -----------------------------------------------
+                            # =========================================================
+                            # CORREÇÃO: LÓGICA DE PULAR TEMPORADA
+                            # =========================================================
+                            
+                            # Se NÃO achou próximo episódio (fim da temporada atual)
+                            if not next_ep:
+                                # Busca todas as temporadas para achar a próxima
+                                all_seasons = await db.get_seasons_for_series(series_id)
+                                
+                                if all_seasons:
+                                    # Procura a temporada X + 1
+                                    next_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num + 1), None)
+                                    
+                                    if next_season_obj:
+                                        # Pega o Ep 1 da nova temporada
+                                        eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
+                                        if eps_next_season:
+                                            next_ep = eps_next_season[0]
+                                            print(f"✅ Próxima temporada encontrada! Botão vai apontar para S{next_season_obj['season_number']}E01")
+
+                            # Se NÃO achou anterior (início da temporada) e não é a temp 1
+                            if not prev_ep and current_season_num > 1:
+                                all_seasons = await db.get_seasons_for_series(series_id) # (O python geralmente cacheia essa call se for seguida)
+                                if all_seasons:
+                                    prev_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num - 1), None)
+                                    if prev_season_obj:
+                                        # Pega o último ep da temporada anterior
+                                        eps_prev, _ = await db.get_episodes_for_season(prev_season_obj['id'], limit=100, offset=0)
+                                        if eps_prev:
+                                            prev_ep = eps_prev[-1]
+
+                            # =========================================================
                             
                             nav_row = []
                             if prev_ep:
                                 nav_row.append(InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}"))
+                            
                             if next_ep:
-                                nav_row.append(InlineKeyboardButton("Próximo Ep. ⏩", callback_data=f"ep_nav_{next_ep['id']}"))
+                                # Verifica se mudou de temporada para ajustar o texto do botão
+                                # Se o season_id do próximo ep for diferente do atual, mudou de temporada.
+                                is_new_season = next_ep.get('season_id') != season_id
+                                btn_text = "Próxima Temp. ⏩" if is_new_season else "Próximo Ep. ⏩"
+                                
+                                nav_row.append(InlineKeyboardButton(btn_text, callback_data=f"ep_nav_{next_ep['id']}"))
                             
                             if nav_row:
                                 base_keyboard.append(nav_row)
