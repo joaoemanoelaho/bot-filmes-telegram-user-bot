@@ -1495,6 +1495,62 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             await status_msg.delete()
 
+    elif callback_data.startswith("adm_approve_") or callback_data.startswith("adm_deny_"):
+        # 🔒 SEGURANÇA: Verifica se quem clicou é Admin
+        if user_id not in ADMIN_IDS:
+            await safe_call(query, "answer", text="🚫 Acesso negado.", show_alert=True)
+            return
+
+        async with DB_SEMAPHORE:
+            action_type, _, req_id = callback_data.split('_') # ex: adm, approve, 123
+            
+            # Define o status baseado no botão clicado
+            new_status = "added" if action_type == "adm_approve" else "denied"
+            
+            # 1. Atualiza no Banco
+            request_data = await db.update_request_status(req_id, new_status)
+            
+            if request_data:
+                target_user_id = request_data.get('user_id')
+                title = request_data.get('title')
+                
+                # 2. Notifica o Usuário (Aqui mesmo, sem webhook!)
+                if target_user_id:
+                    try:
+                        msg_user = ""
+                        if new_status == "added":
+                            msg_user = (
+                                f"🎉 **Boas notícias!**\n\n"
+                                f"O título que você pediu, **'{title}'**, foi aprovado e adicionado ao catálogo! 🍿\n"
+                                f"Use a busca para assistir agora."
+                            )
+                        else:
+                            msg_user = (
+                                f"🔔 **Atualização sobre seu pedido**\n\n"
+                                f"Infelizmente, seu pedido para **'{title}'** não pode ser atendido no momento."
+                            )
+                        
+                        # Envia direto para o usuário
+                        await context.bot.send_message(chat_id=target_user_id, text=msg_user, parse_mode="Markdown")
+                        admin_feedback = "✅ Usuário notificado."
+                    except Exception as e:
+                        print(f"Erro ao notificar user {target_user_id}: {e}")
+                        admin_feedback = "⚠️ Status salvo, mas falha ao notificar usuário (bloqueado?)."
+                else:
+                    admin_feedback = "⚠️ ID do usuário não encontrado."
+
+                # 3. Atualiza a mensagem do Admin para ele saber que deu certo
+                emoji_status = "✅ APROVADO" if new_status == "added" else "❌ NEGADO"
+                
+                # Remove os botões e edita o texto
+                original_text = query.message.text
+                new_text = f"{original_text}\n\n🏁 **Processado:** {emoji_status}\nℹ️ {admin_feedback}"
+                
+                await safe_call(query, "edit_message_text", text=new_text, parse_mode="Markdown", reply_markup=None)
+            
+            else:
+                await safe_call(query, "answer", text="❌ Erro ao atualizar banco. Talvez já processado?", show_alert=True)
+
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
@@ -1995,6 +2051,53 @@ async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAUL
         "Para cancelar, digite /cancelar."
     )
 
+# =================================================================
+# === GESTÃO DE PEDIDOS (ADMIN NO USER BOT) ===
+# =================================================================
+async def pedidos_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Lista os pedidos pendentes para o Admin aprovar ou negar.
+    """
+    user_id = update.effective_user.id
+    
+    # 🔒 SEGURANÇA: Só Admins podem usar
+    if user_id not in ADMIN_IDS:
+        return # Ignora silenciosamente
+
+    async with DB_SEMAPHORE:
+        pending = await db.get_pending_requests()
+        
+        if not pending:
+            await update.message.reply_text("✅ **Zero Pendências!**\nNão há novos pedidos no momento.")
+            return
+
+        await update.message.reply_text(f"📋 **Gerenciamento de Pedidos**\nExistem {len(pending)} pedidos na fila:")
+
+        for req in pending:
+            req_id = req['id']
+            title = req['title']
+            user_req_id = req['user_id']
+            # Data formatada (opcional, se tiver o campo created_at)
+            date_str = req.get('created_at', 'Data desc.')[:10] 
+            
+            # Botões de Ação
+            keyboard = [
+                [
+                    # Callback data contém a ação e o ID do pedido
+                    InlineKeyboardButton("✅ Aprovar", callback_data=f"adm_approve_{req_id}"),
+                    InlineKeyboardButton("❌ Negar", callback_data=f"adm_deny_{req_id}")
+                ]
+            ]
+            
+            await update.message.reply_text(
+                f"🆔 **Pedido #{req_id}**\n"
+                f"👤 User ID: `{user_req_id}`\n"
+                f"📅 Data: {date_str}\n\n"
+                f"🎬 **Solicitação:**\n`{title}`",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
 async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_text: str):
     """
     Esta é a função que realmente faz o trabalho pesado,
@@ -2162,3 +2265,4 @@ broadcast_handler = CommandHandler("transmissao", broadcast_command_handler)
 set_config_handler = CommandHandler("setconfig", set_config_command, filters=filters.User(user_id=ADMIN_IDS))
 set_text_handler = CommandHandler("settext", set_text_command, filters=filters.User(user_id=ADMIN_IDS))
 show_config_handler = CommandHandler("showconfig", show_config_command, filters=filters.User(user_id=ADMIN_IDS))
+pedidos_handler = CommandHandler("pedidos", pedidos_command_handler)

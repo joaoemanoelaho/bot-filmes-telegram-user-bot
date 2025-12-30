@@ -101,6 +101,7 @@ async def startup():
         application.add_handler(handlers.set_config_handler)
         application.add_handler(handlers.set_text_handler)
         application.add_handler(handlers.show_config_handler)
+        application.add_handler(handlers.pedidos_handler)
         application.add_error_handler(error_handler)
 
         await application.initialize()

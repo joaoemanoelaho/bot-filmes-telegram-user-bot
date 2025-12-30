@@ -744,3 +744,25 @@ async def is_favorite(user_id: int, unique_code: str) -> bool:
         return len(response.data) > 0
     except Exception:
         return False
+
+async def get_pending_requests():
+    """Busca todos os pedidos com status 'pending'."""
+    try:
+        response = supabase.table("requests").select("*").eq("status", "pending").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        print(f"Erro ao buscar pedidos pendentes: {e}")
+        return []
+
+async def update_request_status(request_id, new_status):
+    """Atualiza o status e retorna os dados do pedido (para notificar)."""
+    try:
+        # .select() é importante para retornar os dados atualizados (user_id, title)
+        response = supabase.table("requests").update({"status": new_status}).eq("id", request_id).select().execute()
+        if response.data:
+            return response.data[0] # Retorna o dicionário com os dados
+        return None
+    except Exception as e:
+        print(f"Erro ao atualizar status do pedido: {e}")
+        return None
+    
