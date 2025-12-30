@@ -182,6 +182,7 @@ async def _get_vip_sales_message(context: ContextTypes.DEFAULT_TYPE) -> tuple[st
         ANCHOR_PRICE=f"R$ {anchor_price:,.2f}"
     )
     
+    
     keyboard = [[InlineKeyboardButton("Quero meu Acesso Premium! 🚀", callback_data="main_vip")]]
     
     # Se for um callback_query (botão), adiciona o botão "Voltar"
