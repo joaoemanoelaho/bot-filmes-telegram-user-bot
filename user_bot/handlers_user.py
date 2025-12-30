@@ -2075,7 +2075,7 @@ async def pedidos_command_handler(update: Update, context: ContextTypes.DEFAULT_
 
         for req in pending:
             req_id = req['request_id']
-            title = req['title']
+            title = req['requested_title']
             user_req_id = req['user_id']
             # Data formatada (opcional, se tiver o campo created_at)
             date_str = req.get('created_at', 'Data desc.')[:10] 
