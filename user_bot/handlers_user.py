@@ -327,6 +327,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             db.get_neighbor_episode(season_id, current_ep_num, 'next')
                         )
 
+                        # --- ADICIONE ISSO PARA DESCOBRIR A VERDADE ---
+                        if next_ep:
+                            print(f"👻 O BOT ACHOU UM PRÓXIMO EPISÓDIO! ID: {next_ep.get('id')} | Número: {next_ep.get('episode_number')}")
+                        else:
+                            print("✅ O bot NÃO achou próximo episódio. Deveria pular a temporada.")
+                        # -----------------------------------------------
+
                         nav_row = []
                         if prev_ep:
                             nav_row.append(
@@ -1473,6 +1480,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
                                 db.get_neighbor_episode(season_id, current_ep_num, 'next')
                             )
+
+                            # --- ADICIONE ISSO PARA DESCOBRIR A VERDADE ---
+                            if next_ep:
+                                print(f"👻 O BOT ACHOU UM PRÓXIMO EPISÓDIO! ID: {next_ep.get('id')} | Número: {next_ep.get('episode_number')}")
+                            else:
+                                print("✅ O bot NÃO achou próximo episódio. Deveria pular a temporada.")
+                            # -----------------------------------------------
                             
                             nav_row = []
                             if prev_ep:
