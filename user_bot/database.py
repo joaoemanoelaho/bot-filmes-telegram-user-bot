@@ -808,7 +808,7 @@ async def update_request_status(request_id, new_status):
         current_data = data_response.data[0]
 
         # PASSO 2: Atualiza o status
-        supabase.table("requests").update({"status": new_status}).eq("id", request_id).execute()
+        supabase.table("requests").update({"status": new_status}).eq("request_id", request_id).execute()
         
         # Retorna os dados que pegamos no passo 1 (User ID e Título)
         return current_data
