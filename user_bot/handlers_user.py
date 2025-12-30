@@ -1520,7 +1520,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             if request_data:
                 target_user_id = request_data.get('user_id')
-                title = request_data.get('title', 'Filme/Série') # Valor padrão se vier None
+                title = request_data.get('requested_title', 'Filme/Série') # Valor padrão se vier None
                 
                 # 2. Notifica o Usuário
                 if target_user_id:
@@ -1559,7 +1559,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             else:
                 await safe_call(query, "answer", text="❌ Erro ao atualizar. Tente de novo.", show_alert=True)
-                
+
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===
 # =================================================================
