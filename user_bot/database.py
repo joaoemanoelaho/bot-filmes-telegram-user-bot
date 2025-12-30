@@ -18,6 +18,9 @@ from datetime import datetime, timedelta # Para manipulação de datas
 _bot_config_cache = None
 _config_cache_time = 0
 
+VIP_CACHE = {}
+CACHE_TTL = 300
+
 # Tenta criar a conexão com o Supabase.
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -288,40 +291,78 @@ async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:
     
 async def is_user_vip(user_id: int) -> bool:
     """
-    Verifica se o usuário é VIP E se a assinatura não expirou.
-    Se a assinatura expirou, remove o status VIP automaticamente.
+    Verifica se o usuário é VIP com Cache para velocidade máxima.
+    Só consulta o banco de dados se o cache expirar ou não existir.
     """
+    
+    # 1. VERIFICAÇÃO RÁPIDA (MEMÓRIA RAM) 🚀
+    current_time = time.time()
+    
+    if user_id in VIP_CACHE:
+        cached_data = VIP_CACHE[user_id]
+        # Se o cache ainda é válido (não passou de 5 min), retorna o valor salvo
+        if current_time < cached_data['expires_at']:
+            return cached_data['status']
+
+    # 2. CONSULTA AO BANCO (LENTA - Só acontece a cada 5 min) 🐢
     if not supabase:
         return False
+
+    is_vip_result = False # Assume falso até provar o contrário
+
     try:
+        # Busca no banco
         response = await asyncio.to_thread(
-            supabase.table('users').select('is_vip, vip_until').eq('user_id', user_id).single().execute
+            supabase.table('users').select('is_vip, vip_until').eq('user_id', user_id).execute
         )
-        user_data = response.data
         
-        if not user_data or not user_data.get('is_vip'):
-            return False
+        # Verifica se retornou dados
+        if response.data and len(response.data) > 0:
+            user_data = response.data[0]
+            
+            # Se no banco diz que é VIP, vamos conferir a data
+            if user_data.get('is_vip'):
+                vip_until_str = user_data.get('vip_until')
+                
+                if vip_until_str:
+                    # Converte string ISO para objeto de data
+                    vip_expiration_date = datetime.fromisoformat(vip_until_str.replace('Z', '+00:00'))
+                    now = datetime.now(vip_expiration_date.tzinfo)
 
-        vip_until_str = user_data.get('vip_until')
-        if not vip_until_str:
-            await clear_user_active_payment_id(user_id) # Esta função agora é async
-            return False
-
-        vip_expiration_date = datetime.fromisoformat(vip_until_str.replace('Z', '+00:00'))
-
-        if datetime.now(vip_expiration_date.tzinfo) < vip_expiration_date:
-            return True
+                    if now < vip_expiration_date:
+                        # ✅ É VIP e a data está válida
+                        is_vip_result = True
+                    else:
+                        # ❌ Expirou! Atualiza o banco para remover VIP
+                        print(f"📉 Assinatura de {user_id} expirou. Removendo...")
+                        asyncio.create_task(asyncio.to_thread(
+                            supabase.table('users').update({'is_vip': False, 'vip_until': None}).eq('user_id', user_id).execute
+                        ))
+                        is_vip_result = False
+                else:
+                    # É VIP mas não tem data?? Removemos por segurança (lógica original)
+                    if 'clear_user_active_payment_id' in globals():
+                        await clear_user_active_payment_id(user_id)
+                    is_vip_result = False
+            else:
+                is_vip_result = False
         else:
-            print(f"Assinatura VIP do usuário {user_id} expirou. Removendo acesso.")
-            await asyncio.to_thread(
-                supabase.table('users').update({'is_vip': False, 'vip_until': None}).eq('user_id', user_id).execute
-            )
-            return False
+            is_vip_result = False
 
     except Exception as e:
-        print(f"Erro ao verificar status VIP: {e}")
-        return False
-    
+        print(f"⚠️ Erro ao verificar VIP no banco: {e}")
+        # Em caso de erro de conexão, se tivermos um cache antigo, usamos ele por segurança?
+        # Ou retornamos False. Vamos retornar False para evitar liberar acesso indevido.
+        is_vip_result = False
+
+    # 3. SALVA NO CACHE PARA A PRÓXIMA VEZ 💾
+    VIP_CACHE[user_id] = {
+        'status': is_vip_result,
+        'expires_at': current_time + CACHE_TTL
+    }
+
+    return is_vip_result
+
 async def find_movie_by_title_and_year(title: str, year: int) -> dict | None:
     """Procura por um filme no banco de dados pelo título e ano."""
     if not supabase:
@@ -755,13 +796,23 @@ async def get_pending_requests():
         return []
 
 async def update_request_status(request_id, new_status):
-    """Atualiza o status e retorna os dados do pedido (para notificar)."""
+    """Atualiza o status e retorna os dados do pedido (Blindado contra erros de versão)."""
     try:
-        # .select() é importante para retornar os dados atualizados (user_id, title)
-        response = supabase.table("requests").update({"status": new_status}).eq("id", request_id).select().execute()
-        if response.data:
-            return response.data[0] # Retorna o dicionário com os dados
-        return None
+        # PASSO 1: Busca os dados ANTES de atualizar (para garantir que temos o ID do usuário)
+        # Isso evita o erro do .select() no final do update
+        data_response = supabase.table("requests").select("*").eq("id", request_id).execute()
+        
+        if not data_response.data:
+            return None
+            
+        current_data = data_response.data[0]
+
+        # PASSO 2: Atualiza o status
+        supabase.table("requests").update({"status": new_status}).eq("id", request_id).execute()
+        
+        # Retorna os dados que pegamos no passo 1 (User ID e Título)
+        return current_data
+
     except Exception as e:
         print(f"Erro ao atualizar status do pedido: {e}")
         return None
