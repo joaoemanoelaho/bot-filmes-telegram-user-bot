@@ -2074,7 +2074,7 @@ async def pedidos_command_handler(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(f"📋 **Gerenciamento de Pedidos**\nExistem {len(pending)} pedidos na fila:")
 
         for req in pending:
-            req_id = req['id']
+            req_id = req['request_id']
             title = req['title']
             user_req_id = req['user_id']
             # Data formatada (opcional, se tiver o campo created_at)
