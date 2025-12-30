@@ -547,36 +547,41 @@ async def get_full_episode_details(episode_id: int) -> dict | None:
 #
 # --- CORREÇÃO (v5.13): Funções rápidas para navegação de episódios ---
 #
-async def get_neighbor_episode(season_id: int, current_episode_number: int, direction: str) -> dict | None:
-    """Busca o episódio anterior ou próximo em uma temporada."""
-    if not supabase: return None
-    
+async def get_neighbor_episode(season_id, current_number, direction='next'):
+    """
+    Busca o episódio vizinho (anterior ou próximo) sem gerar erro se não existir.
+    """
     try:
-        query = supabase.table('episodes').select('id')
-        query = query.eq('season_id', season_id)
+        query = supabase.table("episodes").select("id, season_id, episode_number")\
+            .eq("season_id", season_id)
         
         if direction == 'next':
-            # Busca o primeiro ep com número MAIOR que o atual
-            query = query.gt('episode_number', current_episode_number)
-            query = query.order('episode_number', desc=False) # Ordem crescente
-        else: # direction == 'previous'
-            # Busca o primeiro ep com número MENOR que o atual
-            query = query.lt('episode_number', current_episode_number)
-            query = query.order('episode_number', desc=True) # Ordem decrescente
+            # Busca o próximo (número maior)
+            query = query.gt("episode_number", current_number)\
+                .order("episode_number", desc=False)\
+                .limit(1)
+        else:
+            # Busca o anterior (número menor)
+            query = query.lt("episode_number", current_number)\
+                .order("episode_number", desc=True)\
+                .limit(1)
+        
+        # Executa a query
+        # O uso de to_thread evita bloquear o bot enquanto espera o banco
+        response = await asyncio.to_thread(query.execute)
+        
+        # Se tiver dados na lista, retorna o primeiro. Se não, retorna None.
+        if response.data and len(response.data) > 0:
+            return response.data[0]
             
-        response = await asyncio.to_thread(
-            query.limit(1).single().execute
-        )
-        
-        return response.data if response.data else None
-        
-    except Exception as e:
-        # 'single()' falha se não encontrar nada, o que é esperado
-        if "Missing data" in str(e):
-            return None
-        print(f"Erro ao buscar neighbor_episode (direction={direction}): {e}")
         return None
 
+    except Exception as e:
+        # Se for um erro real de conexão, ele avisa.
+        # Mas "não encontrado" não vai mais cair aqui.
+        print(f"⚠️ Erro ao buscar vizinho ({direction}): {e}")
+        return None
+    
 async def set_user_inactive(user_id: int):
     """Marca um usuário como inativo (ex: bloqueou o bot)."""
     if not supabase: 
