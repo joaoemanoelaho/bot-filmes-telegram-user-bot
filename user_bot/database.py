@@ -800,7 +800,7 @@ async def update_request_status(request_id, new_status):
     try:
         # PASSO 1: Busca os dados ANTES de atualizar (para garantir que temos o ID do usuário)
         # Isso evita o erro do .select() no final do update
-        data_response = supabase.table("requests").select("*").eq("id", request_id).execute()
+        data_response = supabase.table("requests").select("*").eq("request_id", request_id).execute()
         
         if not data_response.data:
             return None
