@@ -234,20 +234,43 @@ async def pushinpay_webhook(request: Request) -> Response:
     return JSONResponse({"status": "received"})
 
 # ==========================================================
-# 🔔 WEBHOOK SUPABASE
+# 🔔 WEBHOOK SUPABASE (ATUALIZADO)
 # ==========================================================
 async def supabase_webhook(request: Request) -> Response:
+    # Espera o bot iniciar antes de tentar enviar mensagem
     await APP_INITIALIZED.wait()
+    
     try:
         data = await request.json()
-        uid, title, status = data.get("user_id"), data.get("title"), data.get("new_status")
-        if uid and status:
-            msg = f"🎉 '{title}' disponível!" if status == "added" else (f"😔 Pedido '{title}' negado." if status == "denied" else "")
-            if msg:
-                try: await application.bot.send_message(uid, msg)
-                except: pass
+        print(f"--- 🔔 WEBHOOK SUPABASE RECEBIDO ---\n{data}")
+
+        # Pega os dados que o Supabase enviou
+        user_id = data.get('user_id')
+        title = data.get('title')
+        new_status = data.get('new_status') # 'added' ou 'denied'
+        
+        if user_id and new_status:
+            message = ""
+            
+            # Lógica da mensagem personalizada
+            if new_status == 'added':
+                message = f"🎉 **Boas notícias!**\n\nO título que você pediu, **'{title}'**, acabou de ser adicionado ao nosso catálogo!\n\nUse a busca para assistir agora. 🍿"
+            elif new_status == 'denied':
+                message = f"😔 **Olá!**\n\nSobre o seu pedido **'{title}'**: infelizmente não conseguimos adicioná-lo ao catálogo no momento."
+            
+            if message:
+                try:
+                    # Usa o 'application.bot' que já existe no main.py
+                    await application.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+                    print(f"✅ Notificação enviada para {user_id}")
+                except Exception as e_msg:
+                    print(f"⚠️ Erro ao enviar mensagem para o usuário {user_id}: {e_msg}")
+        
         return Response(status_code=200)
-    except Exception: return Response(status_code=500)
+
+    except Exception as e:
+        print(f"❌ Erro ao processar webhook do Supabase: {e}")
+        return Response(status_code=500)
 
 # ==========================================================
 # 🩺 HEALTH CHECK

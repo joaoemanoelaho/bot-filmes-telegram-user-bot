@@ -55,13 +55,11 @@ async def safe_call(obj, method_name, *args, **kwargs):
         print(f"[WARN] Erro em safe_call({method_name}): {e}")
 
 # =================================================================
-# === FUNÇÃO HELPER (PARA NAVEGAÇÃO) ===
+# === FUNÇÃO HELPER (COM PULO DE TEMPORADA AUTOMÁTICO) ===
 # =================================================================
-# (Helper da v5.11 - Otimizado)
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
     """Prepara a mensagem e os botões de áudio (com URL) para um episódio."""
     try:
-        # OTIMIZAÇÃO: 3 chamadas ao DB -> 1 chamada
         details = await db.get_full_episode_details(episode_id)
         if not details:
             return ("Erro: Episódio não encontrado.", None)
@@ -84,28 +82,75 @@ async def _get_episode_details_message(episode_id: int, bot_username: str, delet
             f"Selecione o áudio (o bot irá te chamar no privado):"
         )
 
-        keyboard = []
-        audio_row = []
+        # ---------------------------------------------------------
+        # LÓGICA DE NAVEGAÇÃO INTELIGENTE (PULO DE TEMPORADA)
+        # ---------------------------------------------------------
+        season_id = season.get('id')
+        current_ep_num = episode.get('episode_number', 0)
+        series_id = series.get('id')
+        current_season_num = season.get('season_number')
 
+        # 1. Busca vizinhos na MESMA temporada
+        prev_ep, next_ep = await asyncio.gather(
+            db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
+            db.get_neighbor_episode(season_id, current_ep_num, 'next')
+        )
+
+        # 2. FRONTEIRA: Se não achou 'Próximo', procura na Próxima Temporada (Ex: S01E10 -> S02E01)
+        if not next_ep:
+            # Busca todas as temporadas para achar a próxima
+            all_seasons = await db.get_seasons_for_series(series_id)
+            if all_seasons:
+                # Procura a temporada numero X + 1
+                next_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num + 1), None)
+                
+                if next_season_obj:
+                    # Se achou a S02, pega o primeiro episódio dela
+                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
+                    if eps_next_season:
+                        next_ep = eps_next_season[0] # S02E01 definido como próximo!
+
+        # 3. FRONTEIRA: Se não achou 'Anterior', procura na Temporada Anterior (Ex: S02E01 -> S01E10)
+        if not prev_ep and current_season_num > 1:
+            all_seasons = await db.get_seasons_for_series(series_id) # (Se já buscou antes, o python reusa se for esperto, mas aqui garante)
+            if all_seasons:
+                prev_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num - 1), None)
+                
+                if prev_season_obj:
+                    # Pega os episódios da temporada anterior (limit alto para pegar o último)
+                    eps_prev_season, _ = await db.get_episodes_for_season(prev_season_obj['id'], limit=100, offset=0)
+                    if eps_prev_season:
+                        prev_ep = eps_prev_season[-1] # Pega o ÚLTIMO da lista (Ex: E10)
+
+        # ---------------------------------------------------------
+
+        keyboard = []
+        
+        # Botões de Navegação (Agora inteligentes)
+        nav_row = []
+        if prev_ep:
+            nav_row.append(InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}"))
+        if next_ep:
+            # Adiciona um ícone diferente se for troca de temporada para ficar chique
+            btn_text = "Próxima Temp. ⏩" if next_ep['season_id'] != season_id else "Próximo Ep. ⏩"
+            nav_row.append(InlineKeyboardButton(btn_text, callback_data=f"ep_nav_{next_ep['id']}"))
+        
+        # Botões de Áudio
+        audio_row = []
         if episode.get('dubbed_file_id'):
             payload = f"watch_ep_{episode['id']}_dub"
-            if delete_msg_id:
-                payload += f"_del_{delete_msg_id}"
+            if delete_msg_id: payload += f"_del_{delete_msg_id}"
             url = f"https://t.me/{bot_username}?start={payload}"
-            audio_row.append(
-                InlineKeyboardButton("Dublado 🇧🇷", url=url)
-            )
+            audio_row.append(InlineKeyboardButton("Dublado 🇧🇷", url=url))
+            
         if episode.get('subtitled_file_id'):
             payload = f"watch_ep_{episode['id']}_sub"
-            if delete_msg_id:
-                payload += f"_del_{delete_msg_id}"
+            if delete_msg_id: payload += f"_del_{delete_msg_id}"
             url = f"https://t.me/{bot_username}?start={payload}"
-            audio_row.append(
-                InlineKeyboardButton("Legendado 🇺🇸", url=url)
-            )
+            audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=url))
 
-        if audio_row:
-             keyboard.append(audio_row)
+        if audio_row: keyboard.append(audio_row)
+        if nav_row: keyboard.append(nav_row)
 
         return (message_text, InlineKeyboardMarkup(keyboard))
 
