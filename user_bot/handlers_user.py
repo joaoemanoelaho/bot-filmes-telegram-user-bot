@@ -327,12 +327,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             db.get_neighbor_episode(season_id, current_ep_num, 'next')
                         )
 
-                        # --- ADICIONE ISSO PARA DESCOBRIR A VERDADE ---
-                        if next_ep:
-                            print(f"👻 O BOT ACHOU UM PRÓXIMO EPISÓDIO! ID: {next_ep.get('id')} | Número: {next_ep.get('episode_number')}")
-                        else:
-                            print("✅ O bot NÃO achou próximo episódio. Deveria pular a temporada.")
-                        # -----------------------------------------------
+                        # === LÓGICA DE PULAR TEMPORADA (FALTAVA AQUI!) ===
+                        if not next_ep:
+                            # Busca todas as temporadas
+                            all_seasons = await db.get_seasons_for_series(series_data['id'])
+                            
+                            if all_seasons:
+                                current_season_num = season_data['season_number']
+                                # Procura a temporada X + 1
+                                next_season_obj = next((s for s in all_seasons if s['season_number'] == current_season_num + 1), None)
+                                
+                                if next_season_obj:
+                                    # Pega o Ep 1 da nova temporada
+                                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
+                                    if eps_next_season:
+                                        next_ep = eps_next_season[0]
+
+                        # Se está no Ep 1 e não tem anterior, tenta a temporada anterior
+                        if not prev_ep and season_data['season_number'] > 1:
+                            all_seasons = await db.get_seasons_for_series(series_data['id'])
+                            if all_seasons:
+                                prev_season_obj = next((s for s in all_seasons if s['season_number'] == season_data['season_number'] - 1), None)
+                                if prev_season_obj:
+                                    # Pega o último ep da temporada anterior
+                                    eps_prev, _ = await db.get_episodes_for_season(prev_season_obj['id'], limit=100, offset=0)
+                                    if eps_prev:
+                                        prev_ep = eps_prev[-1]
+                        # =========================================================
 
                         nav_row = []
                         if prev_ep:
