@@ -55,129 +55,68 @@ async def safe_call(obj, method_name, *args, **kwargs):
         print(f"[WARN] Erro em safe_call({method_name}): {e}")
 
 async def _get_episode_details_message(episode_id: int, bot_username: str, delete_msg_id: int = None) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Prepara a mensagem e mostra APENAS os botões de áudio (Dublado/Legendado).
+    Sem navegação (Anterior/Próximo) nesta etapa.
+    """
     try:
         # 1. Busca dados básicos
         details = await db.get_full_episode_details(episode_id)
-        if not details: return ("Erro: Episódio sumiu.", None)
+        if not details: 
+            return ("Erro: Episódio não encontrado.", None)
 
         episode = details
         season = details.get('seasons')
         series = season.get('series') if season else None
 
-        if not season or not series: return ("Erro: Dados incompletos.", None)
+        if not season or not series: 
+            return ("Erro: Dados da temporada ou série ausentes.", None)
 
-        # --- DEBUG 1: Onde estou? ---
-        print(f"\n--- 🕵️ DEBUG NAVEGAÇÃO ---")
-        print(f"Série ID: {series['id']} | Temp Atual: {season['season_number']} | Ep Atual: {episode['episode_number']}")
-
-        # Monta o texto (Padrão)
+        # Monta o texto
         series_title = series.get('title', 'Série')
         ep_title = episode.get('title', f"Episódio {episode['episode_number']}")
+        
         message_text = (
             f"📽️ *{series_title}*\n"
             f"🎬 *Temporada:* {season['season_number']}\n"
             f"🎯 *Episódio:* {episode['episode_number']} - {ep_title}\n"
             f"--------------------\n"
-            f"Selecione o áudio:"
+            f"Selecione o áudio (o bot irá te chamar no privado):"
         )
 
-        # 2. Busca vizinhos normais
-        season_id = season['id']
-        current_ep_num = int(episode['episode_number']) # Força virar número
-        current_season_num = int(season['season_number']) # Força virar número
-        series_id = series['id']
-
-        prev_ep, next_ep = await asyncio.gather(
-            db.get_neighbor_episode(season_id, current_ep_num, 'previous'),
-            db.get_neighbor_episode(season_id, current_ep_num, 'next')
-        )
-
-        print(f"Vizinho Próximo na mesma temporada? {'SIM' if next_ep else 'NÃO'}")
-
-        # 3. LÓGICA DE PULAR TEMPORADA (AQUI É O SEGREDO)
-        if not next_ep:
-            print(">>> Entrando na lógica de buscar Próxima Temporada...")
-            
-            all_seasons = await db.get_seasons_for_series(series_id)
-            print(f">>> Total de temporadas encontradas no banco: {len(all_seasons) if all_seasons else 0}")
-            
-            if all_seasons:
-                # DEBUG: Lista as temporadas achadas
-                seasons_list = [s['season_number'] for s in all_seasons]
-                print(f">>> Temporadas disponíveis: {seasons_list}")
-                
-                target_season = current_season_num + 1
-                print(f">>> Procurando Temporada número: {target_season}")
-
-                # Busca o objeto da próxima temporada
-                next_season_obj = next((s for s in all_seasons if int(s['season_number']) == target_season), None)
-                
-                if next_season_obj:
-                    print(f">>> ✅ ACHEI a temporada {target_season} (ID: {next_season_obj['id']})")
-                    # Pega o primeiro episódio (Ep 1)
-                    eps_next_season, _ = await db.get_episodes_for_season(next_season_obj['id'], limit=1, offset=0)
-                    
-                    if eps_next_season:
-                        next_ep = eps_next_season[0]
-                        print(f">>> ✅ ACHEI o episódio 1 da nova temporada! ID: {next_ep['id']}")
-                    else:
-                        print(f">>> ❌ A temporada existe, mas não tem episódios cadastrados nela.")
-                else:
-                    print(f">>> ❌ Não achei a temporada {target_season}. É o fim da série?")
-
-        # 4. LÓGICA DE VOLTAR TEMPORADA
-        if not prev_ep and current_season_num > 1:
-            all_seasons = await db.get_seasons_for_series(series_id)
-            if all_seasons:
-                target_prev = current_season_num - 1
-                prev_season_obj = next((s for s in all_seasons if int(s['season_number']) == target_prev), None)
-                if prev_season_obj:
-                    eps_prev, _ = await db.get_episodes_for_season(prev_season_obj['id'], limit=100, offset=0)
-                    if eps_prev:
-                        prev_ep = eps_prev[-1] # Último da anterior
-
-        # 5. MONTA BOTÕES
         keyboard = []
-        nav_row = []
         
-        if prev_ep:
-            nav_row.append(InlineKeyboardButton("⏪ Ep. Anterior", callback_data=f"ep_nav_{prev_ep['id']}"))
-        
-        if next_ep:
-            # Verifica se mudou de temporada para mudar o texto
-            # next_ep['season_id'] pode virar int ou str, garante comparação segura
-            is_new_season = int(next_ep.get('season_id', 0)) != int(season_id)
-            
-            btn_text = "Próxima Temp. ⏩" if is_new_season else "Próximo Ep. ⏩"
-            nav_row.append(InlineKeyboardButton(btn_text, callback_data=f"ep_nav_{next_ep['id']}"))
-            print(f">>> Botão Próximo criado: '{btn_text}' apontando para ID {next_ep['id']}")
-        else:
-            print(">>> Nenhum botão 'Próximo' será criado.")
+        # -------------------------------------------------------------
+        # REMOVIDO: LÓGICA DE NAVEGAÇÃO (ANTERIOR/PRÓXIMO)
+        # O usuário pediu para limpar o menu e deixar só os áudios.
+        # -------------------------------------------------------------
 
-        if nav_row: keyboard.append(nav_row)
-
-        # Botões de Áudio (Padrão)
+        # -------------------------------------------------------------
+        # 2. BOTÕES DE ÁUDIO (APENAS ISSO)
+        # -------------------------------------------------------------
         audio_row = []
         if episode.get('dubbed_file_id'):
             payload = f"watch_ep_{episode['id']}_dub"
             if delete_msg_id: payload += f"_del_{delete_msg_id}"
-            audio_row.append(InlineKeyboardButton("Dublado 🇧🇷", url=f"https://t.me/{bot_username}?start={payload}"))
+            url = f"https://t.me/{bot_username}?start={payload}"
+            audio_row.append(InlineKeyboardButton("Dublado 🇧🇷", url=url))
             
         if episode.get('subtitled_file_id'):
             payload = f"watch_ep_{episode['id']}_sub"
             if delete_msg_id: payload += f"_del_{delete_msg_id}"
-            audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=f"https://t.me/{bot_username}?start={payload}"))
+            url = f"https://t.me/{bot_username}?start={payload}"
+            audio_row.append(InlineKeyboardButton("Legendado 🇺🇸", url=url))
 
-        if audio_row: keyboard.append(audio_row)
+        if audio_row: 
+            keyboard.append(audio_row)
 
-        print("--- FIM DEBUG ---\n")
         return (message_text, InlineKeyboardMarkup(keyboard))
 
     except Exception as e:
-        print(f"❌ CRITICAL ERROR helper: {e}")
+        print(f"❌ Erro em _get_episode_details_message: {e}")
         import traceback
         traceback.print_exc()
-        return (f"Erro: {e}", None)
+        return (f"Erro ao carregar detalhes do episódio: {e}", None)
     
 async def _get_vip_sales_message(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyboardMarkup]:
     """
