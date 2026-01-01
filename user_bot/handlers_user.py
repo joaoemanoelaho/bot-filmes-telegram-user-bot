@@ -1574,31 +1574,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         async with DB_SEMAPHORE:
-            # CORREÇÃO CRÍTICA AQUI:
-            # O callback é: adm_approve_69
             parts = callback_data.split('_')
-            # parts[0] = "adm"
-            # parts[1] = "approve" ou "deny"
-            # parts[2] = "69" (ID)
-            
             action = parts[1] 
             req_id = parts[2]
             
-            # Agora a comparação funciona!
-            new_status = "added" if action == "approve" else "denied"
-            
-            # 1. Atualiza no Banco
-            request_data = await db.update_request_status(req_id, new_status)
-            
+            # PASSO 1: Busca dados para notificar (Antes de deletar!)
+            # Tenta usar get_request_by_id. Se não existir, usa update como fallback para ler os dados.
+            try:
+                request_data = await db.get_request_by_id(req_id)
+            except AttributeError:
+                request_data = await db.update_request_status(req_id, "processing")
+
             if request_data:
                 target_user_id = request_data.get('user_id')
-                title = request_data.get('requested_title', 'Filme/Série') # Valor padrão se vier None
+                title = request_data.get('requested_title', 'Filme/Série')
                 
-                # 2. Notifica o Usuário
+                # PASSO 2: Notifica o Usuário
                 if target_user_id:
                     try:
                         msg_user = ""
-                        if new_status == "added":
+                        if action == "approve":
                             msg_user = (
                                 f"🎉 **Boas notícias!**\n\n"
                                 f"O título que você pediu, **'{title}'**, foi aprovado e adicionado ao catálogo! 🍿\n"
@@ -1614,23 +1609,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         admin_feedback = "✅ Usuário notificado."
                     except Exception as e:
                         print(f"Erro ao notificar user {target_user_id}: {e}")
-                        admin_feedback = "⚠️ Status salvo, mas falha ao notificar."
+                        admin_feedback = "⚠️ Falha ao notificar."
                 else:
                     admin_feedback = "⚠️ User ID não achado."
 
-                # 3. Atualiza a mensagem do Admin
-                emoji_status = "✅ APROVADO" if new_status == "added" else "❌ NEGADO"
+                # PASSO 3: A MUDANÇA -> EXCLUI DO BANCO
+                try:
+                    await db.delete_request(req_id)
+                except AttributeError:
+                    admin_feedback += " (Erro: Função 'delete_request' ausente no DB)"
+
+                # PASSO 4: Atualiza a mensagem do Admin
+                emoji_status = "🗑️ APROVADO E REMOVIDO" if action == "approve" else "🗑️ NEGADO E REMOVIDO"
                 original_text = query.message.text
                 
-                # Remove os botões para não clicar de novo
                 await safe_call(query, "edit_message_text", 
-                    text=f"{original_text}\n\n🏁 **Processado:** {emoji_status}\nℹ️ {admin_feedback}", 
+                    text=f"{original_text}\n\n🏁 **Status:** {emoji_status}\nℹ️ {admin_feedback}", 
                     parse_mode="Markdown", 
                     reply_markup=None
                 )
             
             else:
-                await safe_call(query, "answer", text="❌ Erro ao atualizar. Tente de novo.", show_alert=True)
+                await safe_call(query, "answer", text="❌ Pedido não encontrado ou já excluído.", show_alert=True)
+                await safe_call(query, "delete_message")
 
 # =================================================================
 # === INLINE QUERY HANDLER (COM CORREÇÃO v5.13) ===

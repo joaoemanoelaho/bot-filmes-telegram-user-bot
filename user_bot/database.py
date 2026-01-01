@@ -824,3 +824,39 @@ async def update_request_status(req_id, new_status):
         print(f"Erro database update: {e}")
         return None
     
+async def get_request_by_id(req_id: int) -> dict | None:
+    """
+    Busca os dados de um pedido pelo ID para podermos notificar o usuário
+    antes de excluir a linha.
+    """
+    if not supabase: return None
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('requests')
+            .select('*')
+            .eq('request_id', req_id)
+            .single()
+            .execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar pedido {req_id}: {e}")
+        return None
+
+async def delete_request(req_id: int) -> bool:
+    """
+    Deleta fisicamente a linha do pedido na tabela 'requests'.
+    """
+    if not supabase: return False
+    try:
+        await asyncio.to_thread(
+            supabase.table('requests')
+            .delete()
+            .eq('request_id', req_id)
+            .execute
+        )
+        print(f"Pedido {req_id} deletado do banco com sucesso.")
+        return True
+    except Exception as e:
+        print(f"Erro ao deletar pedido {req_id}: {e}")
+        return False
