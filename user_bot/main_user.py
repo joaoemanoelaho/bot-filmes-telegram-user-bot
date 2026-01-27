@@ -100,10 +100,6 @@ async def startup():
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).persistence(persistence).build()
         print("✅ Application criada com AiohttpRequest.")
 
-        # 1. MANUTENÇÃO (PRIORIDADE MÁXIMA)
-        application.add_handler(CommandHandler("pedir", manutencao.manutencao_pedidos_comando))
-        application.add_handler(CallbackQueryHandler(manutencao.manutencao_pedidos_botao, pattern="^main_request$"))
-
         # 1. START & MENU
         application.add_handler(CommandHandler("start", start.start))
         application.add_handler(CommandHandler("help", start.help_handler))
