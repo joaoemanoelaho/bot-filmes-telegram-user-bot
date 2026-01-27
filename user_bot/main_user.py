@@ -17,6 +17,8 @@ from telegram.error import NetworkError
 
 import handlers_user as handlers
 import database as db
+from handlers import manutencao
+from telegram.ext import CommandHandler, CallbackQueryHandler
 # CERTIFIQUE-SE QUE ESTAS VARIÁVEIS ESTÃO NO SEU CONFIG.PY
 from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH
 
@@ -89,6 +91,10 @@ async def startup():
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).persistence(persistence).build()
         print("✅ Application criada com AiohttpRequest.")
 
+        # Intercepta o comando /pedir
+        application.add_handler(CommandHandler("pedir", manutencao.manutencao_pedidos_comando))
+        # Intercepta especificamente o botão "main_request"
+        application.add_handler(CallbackQueryHandler(manutencao.manutencao_pedidos_botao, pattern="^main_request$"))
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
         application.add_handler(handlers.inline_search_handler)
