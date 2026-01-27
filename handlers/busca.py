@@ -10,8 +10,8 @@ from handlers.common import DB_SEMAPHORE, safe_call
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     results = []
-    cache_time = 30 # Padrão
-    is_personal = False
+    cache_time = 0 # Mudei para 0 para facilitar seus testes (não cacheia)
+    is_personal = True
     
     try:
         async with DB_SEMAPHORE:
@@ -40,12 +40,16 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             
                             # --- CORREÇÃO DE PÔSTER BLINDADA ---
                             poster = series.get('poster_url')
-                            if not poster: # Se for None ou string vazia
+                            if not poster: 
                                 poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
                             
                             poster_url_grande = poster
-                            poster_url_pequeno = poster.replace('/w500/', '/w92/')                        
+                            # Evita erro se a URL não tiver /w500/
+                            poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
                             # -----------------------------------
+                            
+                            # Descrição formatada com segurança
+                            desc_text = f"S{int(season_number):02d}E{int(ep_number):02d} - {ep_title}"
                             
                             photo_caption = (
                                 f"📽️ *{series_title}*\n"
@@ -59,9 +63,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
                             results.append(
                                 InlineQueryResultPhoto(
-                                    id=f"share_ep_{episode_id}",
+                                    # Mudei o ID para _v2 para forçar o Telegram a atualizar o visual
+                                    id=f"share_ep_v2_{episode_id}", 
                                     title=f"SÉRIE: {series_title}",
-                                    description=f"S{season_number:02d}E{ep_number:02d} - {ep_title}",
+                                    description=desc_text,
                                     photo_url=poster_url_grande,
                                     thumbnail_url=poster_url_pequeno,
                                     caption=photo_caption,
@@ -70,11 +75,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 )
                             )
                             is_personal = True 
-                            cache_time = 10 
+                            cache_time = 0 # Sem cache para teste
                 except Exception as e:
                     print(f"Erro ao gerar ep_card: {e}")
                 
-                # Envia e sai (para não misturar com busca normal)
+                # Envia e sai
                 await safe_call(update.inline_query, "answer", results, cache_time=cache_time, is_personal=is_personal, next_offset=None)
                 return
 
@@ -139,11 +144,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
                         
-                        # Correção de Poster aqui também
                         poster = series.get('poster_url')
                         if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
-                        poster_url_grande = poster
-                        poster_url_pequeno = poster.replace('/w500/', '/w92/')
+                        poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
 
                         for i, ep in enumerate(episodes):
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
@@ -179,7 +182,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     )
                                 )
 
-                        # Paginação Manual
+                        # Paginação
                         nav_buttons = []
                         if current_offset > 0:
                             prev_offset = max(0, current_offset - page_limit)
@@ -241,7 +244,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     photo_caption = (f"🎬 *{movie['title']}* ({movie['year']})\n🎭 *Gênero:* {movie.get('genre', 'N/A')}")
                     
-                    poster_url_pequeno = poster.replace('/w500/', '/w92/')
+                    poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
                     results.append(
                         InlineQueryResultPhoto(
                             id=f"movie_{movie['movie_id']}", title=f"FILME: {movie['title']}", description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
@@ -252,7 +255,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 for series in series_from_db:
                     poster = series.get('poster_url')
                     if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
-                    poster_url_pequeno = poster.replace('/w500/', '/w92/')
+                    poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
                     
                     seasons = await db.get_seasons_for_series(series['series_id'])
                     photo_caption = (f"📺 *{series['title']}*\n\n🗓️ *Ano:* {series['year']}\n🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n📝 *Sinopse:* {series.get('description', 'N/A')}\n\n---\nSelecione a temporada desejada abaixo:")
