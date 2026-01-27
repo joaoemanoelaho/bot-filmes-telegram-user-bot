@@ -104,37 +104,41 @@ async def startup():
         application.add_handler(CommandHandler("pedir", manutencao.manutencao_pedidos_comando))
         application.add_handler(CallbackQueryHandler(manutencao.manutencao_pedidos_botao, pattern="^main_request$"))
 
-        # 2. START & MENU
+        # 1. START & MENU
         application.add_handler(CommandHandler("start", start.start))
         application.add_handler(CommandHandler("help", start.help_handler))
         application.add_handler(CommandHandler("cancelar", start.cancel_handler))
         application.add_handler(CallbackQueryHandler(start.back_to_main_handler, pattern="^back_to_main$"))
 
-        # 3. VIP & PIX
+        # 2. VIP & PIX
         application.add_handler(CallbackQueryHandler(vip.vip_menu_callback, pattern="^main_vip$"))
         application.add_handler(CallbackQueryHandler(vip.confirm_pay_callback, pattern="^confirm_pay$"))
 
-        # 4. PLAYER & NAVEGAÇÃO
-        application.add_handler(CommandHandler("watch", player.watch_command))
+        # 3. PLAYER & NAVEGAÇÃO
+        # --- AQUI ESTAVA O ERRO (Corrigido de .watch_command para .watch_command_handler) ---
+        application.add_handler(CommandHandler("watch", player.watch_command_handler))
         application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_)"))
 
-        # 5. FAVORITOS
-        application.add_handler(CallbackQueryHandler(utils_fav.fav_menu_handler, pattern="^fav_menu$"))
-        application.add_handler(CallbackQueryHandler(utils_fav.fav_toggle_handler, pattern="^fav_toggle_"))
-        application.add_handler(CallbackQueryHandler(utils_fav.fav_watch_handler, pattern="^fav_watch_"))
+        # 4. FAVORITOS
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_menu_callback, pattern="^fav_menu$"))
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_toggle_callback, pattern="^fav_toggle_"))
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_watch_callback, pattern="^fav_watch_"))
 
-        # 6. ADMIN
-        application.add_handler(CommandHandler("setconfig", admin.set_config))
-        application.add_handler(CommandHandler("pedidos", admin.manage_requests))
-        application.add_handler(CommandHandler("transmissao", admin.start_broadcast))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin.handle_broadcast_text)) # Cuidado com conflito
+        # 5. ADMIN
+        application.add_handler(CommandHandler("setconfig", admin.set_config_command)) # Nome corrigido
+        application.add_handler(CommandHandler("settext", admin.set_text_command))     # Nome corrigido
+        application.add_handler(CommandHandler("showconfig", admin.show_config_command)) # Nome corrigido
+        application.add_handler(CommandHandler("pedidos", admin.pedidos_command_handler))
+        application.add_handler(CommandHandler("transmissao", admin.broadcast_command_handler))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin.text_message_handler))
         application.add_handler(CallbackQueryHandler(admin.admin_callback, pattern="^adm_"))
 
-        # 7. PEDIDOS (Lógica antiga de texto, se ainda usar)
-        application.add_handler(CallbackQueryHandler(pedidos.request_start_callback, pattern="^main_request$")) # OBS: O de manutenção está acima e bloqueia este
+        # 6. PEDIDOS (Manutenção)
+        application.add_handler(CommandHandler("pedir", pedidos.request_command_handler))
+        application.add_handler(CallbackQueryHandler(pedidos.request_start_callback, pattern="^main_request$"))
         
-        # 8. BUSCA (Inline)
-        application.add_handler(InlineQueryHandler(busca.inline_query))
+        # 7. BUSCA (Inline)
+        application.add_handler(InlineQueryHandler(busca.inline_query_handler))
         application.add_error_handler(error_handler)
 
         await application.initialize()
