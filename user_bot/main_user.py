@@ -17,8 +17,17 @@ from telegram.error import NetworkError
 
 import handlers_user as handlers
 import database as db
-from handlers import manutencao
-from telegram.ext import CommandHandler, CallbackQueryHandler
+from handlers import (
+    manutencao, 
+    start, 
+    vip, 
+    pedidos, 
+    admin, 
+    player, 
+    busca, 
+    utils_fav
+)
+from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler
 # CERTIFIQUE-SE QUE ESTAS VARIÁVEIS ESTÃO NO SEU CONFIG.PY
 from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH
 
@@ -91,23 +100,41 @@ async def startup():
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).persistence(persistence).build()
         print("✅ Application criada com AiohttpRequest.")
 
-        # Intercepta o comando /pedir
+        # 1. MANUTENÇÃO (PRIORIDADE MÁXIMA)
         application.add_handler(CommandHandler("pedir", manutencao.manutencao_pedidos_comando))
-        # Intercepta especificamente o botão "main_request"
         application.add_handler(CallbackQueryHandler(manutencao.manutencao_pedidos_botao, pattern="^main_request$"))
-        application.add_handler(handlers.start_handler)
-        application.add_handler(handlers.button_click_handler)
-        application.add_handler(handlers.inline_search_handler)
-        application.add_handler(handlers.watch_handler)
-        application.add_handler(handlers.text_handler)
-        application.add_handler(handlers.cancel_command_handler)
-        application.add_handler(handlers.help_command_handler)
-        application.add_handler(handlers.request_command_handler)
-        application.add_handler(handlers.broadcast_handler)
-        application.add_handler(handlers.set_config_handler)
-        application.add_handler(handlers.set_text_handler)
-        application.add_handler(handlers.show_config_handler)
-        application.add_handler(handlers.pedidos_handler)
+
+        # 2. START & MENU
+        application.add_handler(CommandHandler("start", start.start))
+        application.add_handler(CommandHandler("help", start.help_handler))
+        application.add_handler(CommandHandler("cancelar", start.cancel_handler))
+        application.add_handler(CallbackQueryHandler(start.back_to_main_handler, pattern="^back_to_main$"))
+
+        # 3. VIP & PIX
+        application.add_handler(CallbackQueryHandler(vip.vip_menu_callback, pattern="^main_vip$"))
+        application.add_handler(CallbackQueryHandler(vip.confirm_pay_callback, pattern="^confirm_pay$"))
+
+        # 4. PLAYER & NAVEGAÇÃO
+        application.add_handler(CommandHandler("watch", player.watch_command))
+        application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_)"))
+
+        # 5. FAVORITOS
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_menu_handler, pattern="^fav_menu$"))
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_toggle_handler, pattern="^fav_toggle_"))
+        application.add_handler(CallbackQueryHandler(utils_fav.fav_watch_handler, pattern="^fav_watch_"))
+
+        # 6. ADMIN
+        application.add_handler(CommandHandler("setconfig", admin.set_config))
+        application.add_handler(CommandHandler("pedidos", admin.manage_requests))
+        application.add_handler(CommandHandler("transmissao", admin.start_broadcast))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin.handle_broadcast_text)) # Cuidado com conflito
+        application.add_handler(CallbackQueryHandler(admin.admin_callback, pattern="^adm_"))
+
+        # 7. PEDIDOS (Lógica antiga de texto, se ainda usar)
+        application.add_handler(CallbackQueryHandler(pedidos.request_start_callback, pattern="^main_request$")) # OBS: O de manutenção está acima e bloqueia este
+        
+        # 8. BUSCA (Inline)
+        application.add_handler(InlineQueryHandler(busca.inline_query))
         application.add_error_handler(error_handler)
 
         await application.initialize()
