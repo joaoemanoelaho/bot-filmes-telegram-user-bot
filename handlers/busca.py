@@ -10,7 +10,7 @@ from handlers.common import DB_SEMAPHORE, safe_call
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     results = []
-    cache_time = 0 # Mudei para 0 para facilitar seus testes (não cacheia)
+    cache_time = 0 # Cache 0 para garantir atualização nos testes
     is_personal = True
     
     try:
@@ -18,10 +18,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             query_text = update.inline_query.query
             bot_username = context.bot.username
             
-            # Lê o offset atual (para paginação)
+            # Lê o offset atual
             current_offset = int(update.inline_query.offset) if update.inline_query.offset else 0
 
-            # === ROTA 0: COMPARTILHAMENTO DE EPISÓDIO (EP_CARD) ===
+            # =========================================================
+            # ROTA 0: COMPARTILHAMENTO DE EPISÓDIO (EP_CARD)
+            # =========================================================
             if query_text.startswith("ep_card:"):
                 try:
                     episode_id = int(query_text.split(':')[1])
@@ -33,22 +35,34 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         series = await db.get_series_by_id(season['series_id']) if season else None
 
                         if season and series:
+                            # 1. ADICIONA O "ABRE-ALAS" (AJUDA) PRIMEIRO
+                            # Isso força o Telegram a abrir a lista corretamente
+                            results.append(
+                                InlineQueryResultArticle(
+                                    id="help_header_ep", # ID único
+                                    title="Confirme o envio 👇",
+                                    description="Clique na imagem abaixo para compartilhar o episódio.",
+                                    thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png",
+                                    input_message_content=InputTextMessageContent(
+                                        f"Para compartilhar, clique na imagem do episódio na lista! 👇"
+                                    )
+                                )
+                            )
+
+                            # 2. PREPARA OS DADOS DO EPISÓDIO
                             series_title = series.get('title', 'Série')
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
                             ep_title = episode.get('title', f"Episódio {ep_number}")
                             
-                            # --- CORREÇÃO DE PÔSTER BLINDADA ---
+                            # Tratamento de Pôster Blindado
                             poster = series.get('poster_url')
                             if not poster: 
                                 poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
                             
                             poster_url_grande = poster
-                            # Evita erro se a URL não tiver /w500/
                             poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
-                            # -----------------------------------
                             
-                            # Descrição formatada com segurança
                             desc_text = f"S{int(season_number):02d}E{int(ep_number):02d} - {ep_title}"
                             
                             photo_caption = (
@@ -61,10 +75,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             keyboard = [[InlineKeyboardButton("Assistir - ⏩", url=watch_url)]]
                             reply_markup = InlineKeyboardMarkup(keyboard)
 
+                            # 3. ADICIONA O CARD DO EPISÓDIO (SEGUNDO ITEM)
                             results.append(
                                 InlineQueryResultPhoto(
-                                    # Mudei o ID para _v2 para forçar o Telegram a atualizar o visual
-                                    id=f"share_ep_v2_{episode_id}", 
+                                    id=f"share_ep_v3_{episode_id}", # v3 para limpar cache
                                     title=f"SÉRIE: {series_title}",
                                     description=desc_text,
                                     photo_url=poster_url_grande,
@@ -75,7 +89,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 )
                             )
                             is_personal = True 
-                            cache_time = 0 # Sem cache para teste
+                            cache_time = 0
                 except Exception as e:
                     print(f"Erro ao gerar ep_card: {e}")
                 
@@ -83,7 +97,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 await safe_call(update.inline_query, "answer", results, cache_time=cache_time, is_personal=is_personal, next_offset=None)
                 return
 
-            # === ROTA 1: BUSCA DE EPISÓDIOS (PAGINAÇÃO) ===
+            # =========================================================
+            # ROTA 1: BUSCA DE EPISÓDIOS (PAGINAÇÃO)
+            # =========================================================
             season_id = None
             if query_text.startswith("season:"):
                 parts = query_text.split(':')
@@ -182,7 +198,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     )
                                 )
 
-                        # Paginação
+                        # Botões de Paginação
                         nav_buttons = []
                         if current_offset > 0:
                             prev_offset = max(0, current_offset - page_limit)
@@ -213,7 +229,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     print(f"❌ Erro na busca inline de episódios: {e}")
                     results = [InlineQueryResultArticle(id="error_eps", title="Erro ao buscar episódios", input_message_content=InputTextMessageContent("Ocorreu um erro ao processar sua solicitação."))]
 
-            # === ROTA 2: BUSCA NORMAL (Filme/Série) ===
+            # =========================================================
+            # ROTA 2: BUSCA NORMAL (Filme/Série)
+            # =========================================================
             elif not query_text:
                 results = [
                     InlineQueryResultArticle(
@@ -225,6 +243,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 cache_time = 5
 
             else:
+                # AQUI ESTÁ O AJUDA QUE VOCÊ USA NA BUSCA NORMAL
+                # Replicamos essa lógica lá em cima para o EP_CARD
                 results.append(
                     InlineQueryResultArticle(
                         id="static_help", title="Ajuda", description="Como usar o bot de busca", thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png",
