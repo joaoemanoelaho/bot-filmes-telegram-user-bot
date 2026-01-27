@@ -5,6 +5,7 @@ from telegram.error import Forbidden, RetryAfter
 import database as db
 from config import ADMIN_IDS
 from handlers.common import DB_SEMAPHORE, safe_call
+import handlers.pedidos as pedidos
 
 # =================================================================
 # === COMANDOS DE CONFIGURAÇÃO ===
@@ -151,25 +152,23 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_tex
     await bot.send_message(admin_id, f"📣 **Fim do Broadcast**\n✅ Sucesso: {sucesso}\n❌ Falhas: {falha}")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Captura texto para Broadcast (e pedidos antigos, se estivessem ativos)."""
+    """Captura texto para Broadcast e Pedidos."""
     async with DB_SEMAPHORE:
         state = context.user_data.get('state')
         
-        # ROTA DE BROADCAST
+        # ROTA DE BROADCAST (ADMIN)
         if state == 'awaiting_broadcast_message':
             if update.effective_user.id not in ADMIN_IDS: return
             del context.user_data['state']
             
             msg = update.message.text
             await update.message.reply_text("🚀 Iniciando transmissão em background...")
+            # Precisamos importar a função real do arquivo onde ela estiver, 
+            # ou se estiver neste arquivo (como no seu código anterior), chama direto.
+            # Assumindo que iniciar_broadcast_real está neste arquivo:
             asyncio.create_task(iniciar_broadcast_real(context, msg))
 
-        # ROTA DE PEDIDOS (DESATIVADA PELO MODO MANUTENÇÃO)
-        # Se quiser reativar o modo texto antigo, descomente abaixo:
-        # elif state == 'awaiting_request':
-        #     del context.user_data['state']
-        #     title = update.message.text
-        #     if await db.add_request(update.effective_user.id, title):
-        #         await update.message.reply_text(f"✅ Pedido '{title}' registrado!")
-        #     else:
-        #         await update.message.reply_text("❌ Erro ao salvar.")
+        # ROTA DE PEDIDOS TMDB (NOVA)
+        elif state == 'awaiting_tmdb_id':
+            # Delega a lógica para o arquivo pedidos.py
+            await pedidos.process_tmdb_message(update, context)

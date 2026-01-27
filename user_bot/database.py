@@ -860,3 +860,34 @@ async def delete_request(req_id: int) -> bool:
     except Exception as e:
         print(f"Erro ao deletar pedido {req_id}: {e}")
         return False
+
+async def check_content_exists_by_tmdb_id(tmdb_id: int, media_type: str) -> dict | None:
+    """
+    Verifica se um filme ou série já existe no catálogo pelo TMDB ID.
+    Retorna o título se existir, ou None se não existir.
+    """
+    if not supabase: return None
+    
+    # Define qual tabela olhar baseada no tipo retornado pela API
+    table_name = 'movies' if media_type == 'movie' else 'series'
+    
+    try:
+        # Busca apenas o título para confirmar e mostrar ao usuário
+        # .limit(1) garante que a busca pare assim que encontrar o primeiro
+        response = await asyncio.to_thread(
+            supabase.table(table_name)
+            .select('title')
+            .eq('tmdb_id', tmdb_id)
+            .execute
+        )
+        
+        # Se retornou alguma linha, significa que já temos!
+        if response.data and len(response.data) > 0:
+            return response.data[0] # Retorna {'title': 'Nome do Filme'}
+            
+        return None
+    except Exception as e:
+        # Se a coluna 'tmdb_id' não existir ou der outro erro, apenas loga e segue
+        print(f"⚠️ Erro ao verificar existência no catálogo ({table_name}): {e}")
+        return None
+    
