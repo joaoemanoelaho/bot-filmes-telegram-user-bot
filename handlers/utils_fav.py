@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
-from .. import database as db
+import database as db
 from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 from handlers.common import DB_SEMAPHORE, safe_call, delete_message_job
 

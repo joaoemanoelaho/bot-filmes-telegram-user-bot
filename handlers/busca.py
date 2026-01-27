@@ -2,7 +2,7 @@ from telegram import Update, InlineQueryResultArticle, InlineQueryResultPhoto, I
 from telegram.ext import ContextTypes
 from telegram.error import NetworkError
 import asyncio
-from .. import database as db
+import database as db
 from handlers.common import DB_SEMAPHORE, safe_call
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):

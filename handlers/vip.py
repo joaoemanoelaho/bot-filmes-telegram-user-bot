@@ -3,8 +3,8 @@ import io
 import base64
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from .. import database as db
-from .. import payments
+import database as db
+import payments
 from handlers.common import DB_SEMAPHORE, safe_call, get_vip_sales_message
 
 async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

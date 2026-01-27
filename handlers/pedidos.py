@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from .. import database as db
+import database as db
 from handlers.common import DB_SEMAPHORE, safe_call, get_vip_sales_message
 
 async def request_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

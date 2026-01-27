@@ -3,8 +3,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 import asyncio
-from .. import database as db
-from .. import tastedive_api
+import database as db
+import tastedive_api
 from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 from handlers.common import DB_SEMAPHORE, safe_call, delete_message_job, get_vip_sales_message
 

@@ -1,7 +1,7 @@
 import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from .. import database as db
+import database as db
 import os
 import sys
 

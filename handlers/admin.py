@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import Forbidden, RetryAfter
 import asyncio
-from .. import database as db
+import database as db
 from config import ADMIN_IDS
 from handlers.common import DB_SEMAPHORE, safe_call
 

@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from .. import database as db
+import database as db
 from handlers.common import DB_SEMAPHORE, safe_call, get_vip_sales_message
 # Importa handlers específicos apenas quando necessário dentro da função ou via dispatcher
 # (Para evitar erros, a lógica de 'watch_' e 'show_ep_' será roteada no main ou aqui)
