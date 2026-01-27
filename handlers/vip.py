@@ -5,68 +5,138 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database as db
 import payments
-from handlers.common import DB_SEMAPHORE, safe_call, get_vip_sales_message
+from handlers.common import DB_SEMAPHORE, safe_call, _get_vip_sales_message
 
 async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra o texto de venda (Callback: main_vip)."""
+    """Callback para o botão 'main_vip'."""
     query = update.callback_query
+    
+    # ETAPA 1: Mostrar o Texto de Venda (Marketing)
     async with DB_SEMAPHORE:
         await safe_call(query, "answer")
-        sales_text, _ = await get_vip_sales_message()
         
+        # Pega o texto de venda formatado (o helper já faz isso)
+        context.user_data['update'] = update
+        sales_text, _ = await _get_vip_sales_message(context) # Ignoramos o markup antigo do helper
+
+        # Criamos o NOVO markup com o botão de confirmar
         keyboard = [
-            [InlineKeyboardButton("✅ Sim, Gerar PIX!", callback_data="confirm_pay")],
-            [InlineKeyboardButton("⬅️ Voltar", callback_data="back_to_main")]
+            [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+            [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
         ]
-        await safe_call(query, "edit_message_text", text=sales_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        try:
+            # Mostra o texto de venda com o botão "Gerar PIX"
+            await safe_call(query, "edit_message_text",
+                text=sales_text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            print(f"Erro ao mostrar sales_text em main_vip: {e}")
 
 async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gera o PIX (Callback: confirm_pay)."""
+    """Callback para o botão 'confirm_pay'."""
     query = update.callback_query
     user_id = query.from_user.id
     
-    # Cooldown
+    # ETAPA 2: Gerar o PIX
     now = time.time()
-    last = context.user_data.get('last_pix', 0)
-    if now - last < 60:
-        await safe_call(query, "answer", text=f"Aguarde {int(60-(now-last))}s.", show_alert=True)
+    last_request = context.user_data.get('last_pix_request', 0)
+    cooldown = 60 # 60 segundos de cooldown
+
+    if now - last_request < cooldown:
+        await safe_call(query, "answer",
+            text=f"✋ Calma! Aguarde {int(cooldown - (now - last_request))}s para gerar um novo PIX.",
+            show_alert=True
+        )
         return
-    context.user_data['last_pix'] = now
 
     async with DB_SEMAPHORE:
         await safe_call(query, "answer")
-        
-        if await db.is_user_vip(user_id):
-            await safe_call(query, "edit_message_text", text="✅ Você já é VIP!")
-            return
 
         config = await db.get_bot_config()
-        if config.get('vip_price', 0) <= 0:
-            await db.set_user_as_vip(user_id, duration_days=999)
-            await safe_call(query, "edit_message_text", text="🎉 Modo Gratuito Ativado! Aproveite.")
-            return
-
-        await safe_call(query, "edit_message_text", text="⏳ Gerando PIX...")
-        
-        # Cria pagamento
         price = config.get('vip_price', 4.99)
-        payment = await payments.create_pix_payment(user_id, price)
+        duration_days = config.get('vip_duration_days', 7)
+
+        # Verificação de segurança
+        if await db.is_user_vip(user_id):
+            try:
+                await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
+            except Exception: pass
+            return
         
-        if payment and payment.get("qr_code_base64"):
-            # Decodifica Imagem
-            b64 = payment['qr_code_base64'].split(',')[-1]
-            img = io.BytesIO(base64.b64decode(b64))
+        if price <= 0:
+            # O admin mudou para 'gratis' enquanto o usuário olhava o menu
+            await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
+            await safe_call(query, "edit_message_text", text="🎉 Boas notícias! O acesso agora é gratuito. Seu VIP foi ativado!")
+            return
+        
+        # Lógica de verificação de pagamento pendente
+        user_details = await db.get_user_details(user_id)
+        active_payment_id = user_details.get('active_payment_id') if user_details else None
+
+        if active_payment_id:
+            await safe_call(query, "edit_message_text", text="⏳ Verificando pagamento pendente...")
+            status = await payments.check_payment_status(active_payment_id)
+
+            if status == "paid":
+                await db.set_user_as_vip(user_id, duration_days=duration_days) 
+                await db.clear_user_active_payment_id(user_id)
+                await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
+                return
             
-            txt = (
-                f"💰 **Valor:** R$ {price:,.2f}\n"
-                f"💠 **Copia e Cola:**\n`{payment['qr_code_text']}`\n\n"
-                "⏳ Pague em até 5 minutos. A liberação é automática!"
+            elif status == "created":
+                await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
+                return
+
+            elif status in ["expired", "canceled", "not_found"]:
+                await db.clear_user_active_payment_id(user_id)
+            
+            else:
+                await safe_call(query, "edit_message_text", text="😕 Erro ao verificar seu pagamento anterior. Tente novamente em 1 minuto.")
+                return
+        
+        context.user_data['last_pix_request'] = time.time()
+        
+        # Puxa os preços do DB
+        vip_price = config.get('vip_price', 4.99)
+        vip_anchor_price = config.get('vip_anchor_price', 14.99)
+        
+        await safe_call(query, "edit_message_text", text="⏳ Gerando sua cobrança PIX, aguarde...")
+
+        payment_data = await payments.create_pix_payment(user_id=user_id, amount=vip_price)
+
+        if payment_data and payment_data.get("qr_code_base64"):
+            payment_id = payment_data['payment_id']
+            base64_string = payment_data['qr_code_base64']
+            if ',' in base64_string:
+                base64_string = base64_string.split(',')[1]
+            qr_image_data = base64.b64decode(base64_string)
+            qr_image_file = io.BytesIO(qr_image_data)
+            pix_code = payment_data['qr_code_text']
+            
+            caption = (
+                f"✨ **Seu PIX Promocional está pronto!**\n\n"
+                f"Preço normal: ~~R$ {vip_anchor_price:,.2f}~~\n"
+                f"Preço HOJE: **R$ {vip_price:,.2f}**\n\n"
+                f"**1.** Escaneie o QR Code acima.\n"
+                f"**2.** Ou use o PIX Copia e Cola abaixo:\n"
+                f"`{pix_code}`\n\n"
+                "✅ Seu acesso Premium é **liberado automaticamente** segundos após o pagamento.\n\n"
+                "⚠️ **ATENÇÃO: Este código expira em 5 minutos!**\n"
+                "Pague agora para travar o preço promocional."
+            )
+
+            await safe_call(query.message, "delete") # Deleta a mensagem de "venda"
+
+            msg_qrcode = await context.bot.send_photo(
+                chat_id=user_id, photo=qr_image_file, caption=caption,
+                parse_mode="Markdown", reply_markup=None
             )
             
-            await safe_call(query.message, "delete")
-            msg = await context.bot.send_photo(chat_id=user_id, photo=img, caption=txt, parse_mode="Markdown")
-            
-            # Salva ID para deletar depois se precisar
-            await db.set_user_active_payment_id(user_id, payment['payment_id'], msg.message_id)
+            qr_message_id = msg_qrcode.message_id
+            await db.set_user_active_payment_id(user_id, payment_id, qr_message_id) 
         else:
-            await safe_call(query, "edit_message_text", text="❌ Erro ao gerar PIX. Tente mais tarde.")
+            await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
