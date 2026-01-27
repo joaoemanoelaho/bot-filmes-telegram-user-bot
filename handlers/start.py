@@ -7,12 +7,11 @@ from handlers.common import (
     DB_SEMAPHORE, safe_call, _get_vip_sales_message, 
     _get_episode_details_message, delete_message_job
 )
-# Importação local para evitar ciclo (será resolvido quando criarmos o player.py)
-# A função watch_command_handler será importada dentro do start para evitar erro agora.
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Importação atrasada para evitar ciclo de dependência
-    from handlers.player import watch_command_handler, button_handler as player_button_handler
+    # --- CORREÇÃO AQUI: Importamos apenas o watch_command_handler ---
+    # Removemos 'button_handler', pois ele mudou de nome e não precisamos dele aqui
+    from handlers.player import watch_command_handler
 
     async with DB_SEMAPHORE:
         is_query = update.callback_query is not None
@@ -266,32 +265,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             # ROTA 3: Assistir Filme (watch_)
             elif payload.startswith("watch_"):
                 context.args = [payload.split('_')[1]]
-                # Chama o handler que estará no player.py (importado lá em cima)
+                # Chama o handler que importamos de player.py
                 await watch_command_handler(update, context, message_deletada=True)
                 return
 
             # ROTA 4: Atalho VIP
             elif payload == "vip":
-                # Truque para simular clique no botão VIP
-                class FakeQuery:
-                    def __init__(self, usr, msg):
-                        self.from_user = usr
-                        self.message = msg
-                        self.data = "main_vip"
-                    async def answer(self): pass
-                    async def edit_message_text(self, *a, **kw): await context.bot.send_message(user.id, *a, **kw)
-                class FakeUpdate:
-                    def __init__(self, usr, msg):
-                        self.effective_user = usr
-                        self.callback_query = FakeQuery(usr, msg)
-                        self.message = msg
-                # Precisamos importar o handler de vip aqui se formos usar, 
-                # mas como não temos vip.py ainda, vamos deixar para o main rotear isso depois
-                # ou importar vip_menu_callback se já tivermos. 
-                # Por hora, deixamos assim, assumindo que player_button_handler não trata main_vip.
-                # Melhor: Redirecionar para mensagem de venda direto.
+                # --- CORREÇÃO: Chamada direta sem simular botão ---
+                # Isso evita importar handlers que não existem mais ou mudaram de nome.
                 sales_text, reply_markup = await _get_vip_sales_message(context)
-                await context.bot.send_message(chat_id=user.id, text=sales_text, reply_markup=reply_markup, parse_mode="Markdown")
+                await context.bot.send_message(
+                    chat_id=user.id, 
+                    text=f"Opa, {user.first_name}! 👋\n\n{sales_text}", 
+                    parse_mode="Markdown", 
+                    reply_markup=reply_markup
+                )
                 return
 
         # === MENU PRINCIPAL ===
