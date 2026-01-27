@@ -117,7 +117,7 @@ async def startup():
         # 3. PLAYER & NAVEGAÇÃO
         # --- AQUI ESTAVA O ERRO (Corrigido de .watch_command para .watch_command_handler) ---
         application.add_handler(CommandHandler("watch", player.watch_command_handler))
-        application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_)"))
+        application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_|main_top|top_)"))
 
         # 4. FAVORITOS
         application.add_handler(CallbackQueryHandler(utils_fav.fav_menu_callback, pattern="^fav_menu$"))

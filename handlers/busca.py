@@ -37,8 +37,15 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
                             ep_title = episode.get('title', f"Episódio {ep_number}")
-                            poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-                            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')                        
+                            
+                            # --- CORREÇÃO DE PÔSTER BLINDADA ---
+                            poster = series.get('poster_url')
+                            if not poster: # Se for None ou string vazia
+                                poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                            
+                            poster_url_grande = poster
+                            poster_url_pequeno = poster.replace('/w500/', '/w92/')                        
+                            # -----------------------------------
                             
                             photo_caption = (
                                 f"📽️ *{series_title}*\n"
@@ -105,7 +112,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                 description="Clique aqui para liberar todas as séries do catálogo.",
                                 thumbnail_url="https://i.imgur.com/L3Ew4wt.png",
                                 reply_markup=InlineKeyboardMarkup([[
-                                        InlineKeyboardButton("Quero meu Acesso Premium! 🚀", url=f"https://t.me/{bot_username}?start=vip")
+                                        InlineKeyboardButton(
+                                            "Quero meu Acesso Premium! 🚀",
+                                            url=f"https://t.me/{bot_username}?start=vip"
+                                        )
                                     ]]),
                                 input_message_content=InputTextMessageContent(
                                     message_text=(f"Ei {update.inline_query.from_user.first_name}! 👋\n\nPara maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!"),
@@ -128,8 +138,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     else:
                         series = await db.get_series_by_id(season['series_id'])
                         series_title = series.get('title', 'Série') if series else 'Série'
-                        poster_url_grande = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-                        poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
+                        
+                        # Correção de Poster aqui também
+                        poster = series.get('poster_url')
+                        if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                        poster_url_grande = poster
+                        poster_url_pequeno = poster.replace('/w500/', '/w92/')
 
                         for i, ep in enumerate(episodes):
                             ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
@@ -158,7 +172,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         description=f"🎬 {series_title} | {ep_title}",
                                         thumbnail_url=poster_url_pequeno,
                                         reply_markup=InlineKeyboardMarkup([audio_row]),
-                                        input_message_content=InputTextMessageContent(message_text=message_text, parse_mode="Markdown")
+                                        input_message_content=InputTextMessageContent(
+                                            message_text=message_text,
+                                            parse_mode="Markdown"
+                                        )
                                     )
                                 )
 
@@ -216,22 +233,27 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 series_from_db = await db.search_series_by_title(query_text, limit=5)
 
                 for movie in movies_from_db:
-                    if movie.get('poster_url'):
-                        watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
-                        keyboard = [[InlineKeyboardButton("Assistir ⏯️", url=watch_url)], [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        photo_caption = (f"🎬 *{movie['title']}* ({movie['year']})\n🎭 *Gênero:* {movie.get('genre', 'N/A')}")
-                        poster_url_pequeno = movie.get('poster_url').replace('/w500/', '/w92/')
-                        results.append(
-                            InlineQueryResultPhoto(
-                                id=f"movie_{movie['movie_id']}", title=f"FILME: {movie['title']}", description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
-                                photo_url=movie['poster_url'], thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=reply_markup
-                            )
+                    poster = movie.get('poster_url')
+                    if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                    
+                    watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
+                    keyboard = [[InlineKeyboardButton("Assistir ⏯️", url=watch_url)], [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    photo_caption = (f"🎬 *{movie['title']}* ({movie['year']})\n🎭 *Gênero:* {movie.get('genre', 'N/A')}")
+                    
+                    poster_url_pequeno = poster.replace('/w500/', '/w92/')
+                    results.append(
+                        InlineQueryResultPhoto(
+                            id=f"movie_{movie['movie_id']}", title=f"FILME: {movie['title']}", description=f"{movie['year']} - {movie.get('genre', 'N/A')}",
+                            photo_url=poster, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=reply_markup
                         )
+                    )
 
                 for series in series_from_db:
-                    poster_url = series.get('poster_url', 'https://via.placeholder.com/500x750.png?text=Sem+Pôster')
-                    poster_url_pequeno = poster_url.replace('/w500/', '/w92/')
+                    poster = series.get('poster_url')
+                    if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                    poster_url_pequeno = poster.replace('/w500/', '/w92/')
+                    
                     seasons = await db.get_seasons_for_series(series['series_id'])
                     photo_caption = (f"📺 *{series['title']}*\n\n🗓️ *Ano:* {series['year']}\n🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n📝 *Sinopse:* {series.get('description', 'N/A')}\n\n---\nSelecione a temporada desejada abaixo:")
                     keyboard = []
@@ -243,7 +265,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     results.append(
                         InlineQueryResultPhoto(
                             id=f"series_{series['series_id']}", title=f"SÉRIE: {series['title']}", description=f"{series['year']} - {series.get('genre', 'Série')}",
-                            photo_url=poster_url, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+                            photo_url=poster, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
                         )
                     )
                 cache_time = 30
@@ -260,3 +282,4 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except NetworkError as e:
             if attempt + 1 == max_retries: return
             await asyncio.sleep(1)
+            
