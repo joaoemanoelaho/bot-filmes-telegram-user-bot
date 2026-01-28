@@ -130,26 +130,63 @@ async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text("📣 Envie a mensagem para transmissão ou /cancelar.")
 
 async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_text: str):
+    """
+    Versão Híbrida: Estrutura robusta + Limpeza real de banco.
+    """
     bot = context.bot
     admin_id = ADMIN_IDS[0]
-    active_users = await db.get_active_users()
     
+    # 1. Busca usuários ativos
+    active_users = await db.get_active_users()
     if not active_users:
-        await bot.send_message(admin_id, "Nenhum usuário ativo.")
+        await bot.send_message(chat_id=admin_id, text="📣 Cancelado: Nenhum usuário ativo.")
         return
 
-    sucesso = 0
-    falha = 0
+    await bot.send_message(chat_id=admin_id, text=f"🚀 Iniciando envio para {len(active_users)} usuários...")
     
+    sucesso = 0
+    removidos = 0 # Mudamos o nome para ficar claro
+    falha_outros = 0
+
     for user in active_users:
+        user_id = user['user_id']
+        
         try:
-            await bot.send_message(user['user_id'], message_text, parse_mode="Markdown")
+            await bot.send_message(chat_id=user_id, text=message_text, parse_mode="Markdown")
             sucesso += 1
-            await asyncio.sleep(6) # Anti-flood rigoroso
-        except Exception:
-            falha += 1
             
-    await bot.send_message(admin_id, f"📣 **Fim do Broadcast**\n✅ Sucesso: {sucesso}\n❌ Falhas: {falha}")
+            # Delay: 6s é muito seguro, mas lento. 
+            # Se quiser mais rápido, mude para 3 ou 4.
+            await asyncio.sleep(4) 
+
+        except Forbidden as e:
+            # 💀 O PULO DO GATO: Verificamos o erro, mas usamos DELETE
+            erro = str(e).lower()
+            if "bot was blocked" in erro or "user is deactivated" in erro:
+                await db.delete_user(user_id) 
+                removidos += 1
+            else:
+                # Se for um Forbidden estranho, apenas logamos
+                print(f"Forbidden desconhecido para {user_id}: {e}")
+                falha_outros += 1
+
+        except RetryAfter as e:
+            print(f"⏳ FloodWait: Dormindo {e.retry_after}s...")
+            await asyncio.sleep(e.retry_after + 2)
+
+        except Exception as e:
+            print(f"❌ Erro genérico {user_id}: {e}")
+            falha_outros += 1
+    
+    # Relatório Final
+    relatorio = (
+        f"📣 **Transmissão Finalizada!**\n\n"
+        f"✅ Entregues: {sucesso}\n"
+        f"🗑️ Removidos (Bloquearam): {removidos}\n" # Mostra quantos limpamos
+        f"❌ Falhas: {falha_outros}\n\n"
+        f"Base limpa: {len(active_users) - removidos} usuários restantes."
+    )
+    await bot.send_message(chat_id=admin_id, text=relatorio, parse_mode="Markdown")
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Captura texto para Broadcast e Pedidos."""

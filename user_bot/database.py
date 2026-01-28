@@ -890,4 +890,18 @@ async def check_content_exists_by_tmdb_id(tmdb_id: int, media_type: str) -> dict
         # Se a coluna 'tmdb_id' não existir ou der outro erro, apenas loga e segue
         print(f"⚠️ Erro ao verificar existência no catálogo ({table_name}): {e}")
         return None
+
+# Adicione isso no database.py
+async def delete_user(user_id: int):
+    """
+    Remove definitivamente um usuário do banco (para quem bloqueou o bot).
+    """
+    if not supabase: return
+    try:
+        await asyncio.to_thread(
+            supabase.table('users').delete().eq('user_id', user_id).execute
+        )
+        print(f"💀 Usuário {user_id} removido do banco (Bloqueou o bot).")
+    except Exception as e:
+        print(f"Erro ao deletar usuário {user_id}: {e}")
     
