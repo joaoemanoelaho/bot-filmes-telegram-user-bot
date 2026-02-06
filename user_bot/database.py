@@ -912,3 +912,20 @@ async def delete_user(user_id: int):
     except Exception as e:
         print(f"Erro ao deletar usuário {user_id}: {e}")
     
+async def get_mixed_recommendations(genre: str, limit: int = 5) -> list[dict]:
+    """Busca Filmes E Séries do banco com gênero similar."""
+    if not supabase or not genre: return []
+    try:
+        # Pega o primeiro gênero (ex: "Ação" de "Ação, Aventura")
+        main_genre = genre.split(',')[0].strip()
+        
+        response = await asyncio.to_thread(
+            supabase.rpc('get_mixed_recommendations', {
+                'target_genre': main_genre,
+                'limit_count': limit
+            }).execute
+        )
+        return response.data
+    except Exception as e:
+        print(f"Erro ao buscar recomendações mistas: {e}")
+        return []

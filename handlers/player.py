@@ -189,30 +189,54 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_call(query, "answer")
             parts = callback_data.split('_')
             media_id = int(parts[1])
-            media_type = 'series' if len(parts) > 2 and parts[2] == 'series' else 'movie'
+            source_type = 'series' if len(parts) > 2 and parts[2] == 'series' else 'movie'
             
-            title_to_search = None
-            if media_type == 'movie':
+            title_current = ""
+            genre_current = ""
+            if source_type == 'movie':
                 media_obj = await db.get_movie_by_id(media_id)
-                if media_obj: title_to_search = media_obj['title']
             else:
-                media_obj = await db.get_series_by_id(media_id)
-                if media_obj: title_to_search = media_obj['title']
+                media_obj = await db.get_series_by_id(media_id) # Certifique-se que essa função existe no db
             
-            if not title_to_search:
+            if not media_obj:
                 await context.bot.send_message(chat_id=user_id, text="Mídia original não encontrada.")
                 return
             
-            status_msg = await context.bot.send_message(chat_id=user_id, text=f"⏳ Buscando similares a '{title_to_search}'...")
-            recommendations = await tastedive_api.get_recommendations(title_to_search)
-            valid_recs = await db.filter_existing_titles(recommendations) if recommendations else []
-
-            if not valid_recs:
-                await status_msg.edit_text("Sem recomendações no catálogo.")
+            title_current = media_obj.get('title', 'Desconhecido')
+            genre_current = media_obj.get('genre', '')
+            
+            status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔍 Buscando filmes e séries parecidos com **'{title_current}'**...")
+            
+            # 2. Buscar Recomendações MISTAS no Banco
+            recommendations = await db.get_mixed_recommendations(genre_current, limit=6)
+            
+            if not recommendations:
+                await status_msg.edit_text(f"😕 Não encontrei nada do gênero '{genre_current}' no catálogo.")
                 return
             
-            keyboard = [[InlineKeyboardButton(f"🔎 {t}", switch_inline_query_current_chat=t)] for t in valid_recs]
-            await status_msg.edit_text(text=f"Sugestões baseadas em '{title_to_search}':", reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = []
+            for rec in recommendations:
+                # Se for filme, usa o ícone de Claquete 🎬
+                if rec['type'] == 'movie':
+                    btn_text = f"🎬 {rec['title']}"
+                    # Filmes abrem o Card direto
+                    callback = f"show_card_{rec['id']}"
+                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback)])
+                
+                # Se for série, usa a TV 📺
+                else:
+                    btn_text = f"📺 {rec['title']}"
+                    # Séries jogam para a busca inline (já que não temos show_card de série ainda)
+                    # Isso garante que ele ache os episódios
+                    keyboard.append([InlineKeyboardButton(btn_text, switch_inline_query_current_chat=rec['title'])])
+            
+            keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="back_to_main")])
+            
+            await status_msg.edit_text(
+                text=f"🍿 **Porque você gosta de {genre_current}:**\nAqui estão sugestões do nosso catálogo:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
             context.user_data['last_action_time'] = time.time()
 
     # 3. NAVEGAÇÃO EPISÓDIO (ep_nav_)
