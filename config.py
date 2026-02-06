@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 
 # Carrega variáveis do .env
@@ -36,6 +37,20 @@ SESSION_STRING = os.environ.get('PYROGRAM_SESSION_STRING')
 
 WEBHOOK_DOMAIN = os.getenv("WEBHOOK_DOMAIN")
 TELEGRAM_WEBHOOK_PATH = os.getenv("TELEGRAM_WEBHOOK_PATH")
+
+# --- CONFIGURAÇÕES SYNCPAY ---
+SYNCPAY_BASE_URL = os.getenv("SYNCPAY_BASE_URL")
+SYNCPAY_CLIENT_ID = os.getenv("SYNCPAY_CLIENT_ID")
+SYNCPAY_CLIENT_SECRET = os.getenv("SYNCPAY_CLIENT_SECRET")
+
+# Dados "Padrão" para gerar o QR Code (Já que o bot não pede CPF pro usuário)
+# Use um CPF válido (pode ser o seu ou de um laranja/sócio), senão a API rejeita.
+DEFAULT_PAYER = {
+    "name": os.getenv("PAYER_NAME"),
+    "cpf": os.getenv("PAYER_CPF"),
+    "email": os.getenv("PAYER_EMAIL"),
+    "phone": os.getenv("PAYER_PHONE")
+}
 
 # Validações
 if not BOT_TOKEN:

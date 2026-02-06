@@ -311,9 +311,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
         )
         welcome_text = (
-            f"Olá {user.mention_html()}! 👋 Você está no Cine Pipoca, seu assistente de mídia automatizado. 🍿\n\n"
-            "⚠️ Status da Conta: Gratuita (Limitada) Para liberar buscas ilimitadas, qualidade HD e servidor prioritário, adquira o Acesso VIP.\n\n"
-            "👇 Clique abaixo para garantir seu acesso:\n\n"
+            f"Olá {user.mention_html()}! 👋\n\n"
+            "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b> 🍿\n\n"
+            "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
+            "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
+            "Ficou com dúvidas? Envie o comando /help\n\n"
+            "_________________\n\n"
+            "Para liberar acesso ilimitado e alta velocidade, torne-se VIP!\n"
+            "💎 <b>Clique em \"Adquirir VIP\" no menu abaixo!</b>\n\n"
+            "_________________\n\n"
+            "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
+            f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
         )
 
         if is_query:

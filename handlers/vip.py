@@ -39,16 +39,6 @@ async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback para o botão 'confirm_pay'."""
     query = update.callback_query
-
-    # === ADICIONE ESTE BLOCO AQUI (INÍCIO) ===
-    # Isso fará aparecer um popup na tela do usuário e para o código aqui.
-    await safe_call(query, "answer", 
-        text="⚠️ O sistema PIX está em manutenção aguardando liberação bancária.\n\nTente novamente mais tarde!", 
-        show_alert=True
-    )
-    return # Esse return é importante para parar o resto do código
-    # === FIM DO BLOCO ===
-
     user_id = query.from_user.id
     
     # ETAPA 2: Gerar o PIX
@@ -128,14 +118,14 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             pix_code = payment_data['qr_code_text']
             
             caption = (
-                f"✨ **Seu PIX Promocional está pronto!**\n\n"
-                f"Preço normal: ~~R$ {vip_anchor_price:,.2f}~~\n"
-                f"Preço HOJE: **R$ {vip_price:,.2f}**\n\n"
-                f"**1.** Escaneie o QR Code acima.\n"
-                f"**2.** Ou use o PIX Copia e Cola abaixo:\n"
-                f"`{pix_code}`\n\n"
-                "✅ Seu acesso Premium é **liberado automaticamente** segundos após o pagamento.\n\n"
-                "⚠️ **ATENÇÃO: Este código expira em 5 minutos!**\n"
+                f"✨ <b>Seu PIX Promocional está pronto!</b>\n\n"
+                f"Preço normal: <s>R$ {vip_anchor_price:,.2f}</s>\n"  
+                f"Preço HOJE: <b>R$ {vip_price:,.2f}</b>\n\n"       
+                f"<b>1.</b> Escaneie o QR Code acima.\n"
+                f"<b>2.</b> Ou use o PIX Copia e Cola abaixo:\n"
+                f"<code>{pix_code}</code>\n\n"              
+                "✅ Seu acesso Premium é <b>liberado automaticamente</b> segundos após o pagamento.\n\n"
+                "⚠️ <b>ATENÇÃO: Este código expira em 5 minutos!</b>\n"
                 "Pague agora para travar o preço promocional."
             )
 
@@ -143,7 +133,7 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
             msg_qrcode = await context.bot.send_photo(
                 chat_id=user_id, photo=qr_image_file, caption=caption,
-                parse_mode="Markdown", reply_markup=None
+                parse_mode="HTML", reply_markup=None
             )
             
             qr_message_id = msg_qrcode.message_id

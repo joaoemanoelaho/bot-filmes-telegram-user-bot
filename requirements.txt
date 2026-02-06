@@ -16,3 +16,5 @@ ptbcontrib[aiohttp_request_socks] @ git+https://github.com/python-telegram-bot/p
 python-multipart
 aiohttp_socks>=0.10.2
 httpx[socks]
+qrcode 
+pillow
