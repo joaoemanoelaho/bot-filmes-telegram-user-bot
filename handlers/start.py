@@ -289,7 +289,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 return
 
         # === MENU PRINCIPAL ===
-        await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
+        try:
+            user_info = await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
+            
+            # Verifica se retornou uma tupla (user_data, is_new)
+            if isinstance(user_info, tuple):
+                _, is_new_user = user_info
+            else:
+                # Caso o database.py ainda esteja na versão antiga
+                is_new_user = False
+        except Exception:
+            # Fallback de segurança
+            is_new_user = False
+
+        # 🎉 SE FOR NOVO, MANDA A MENSAGEM DO TESTE GRÁTIS 🎉
+        if is_new_user:
+            trial_text = (
+                f"🎉 <b>PARABÉNS, {user.first_name}! VOCÊ GANHOU UM PRESENTE!</b> 🎁\n\n"
+                "Como boas-vindas, liberamos <b>4 HORAS DE ACESSO VIP TOTAL!</b> 🚀\n\n"
+                "✅ Filmes e Séries sem limites.\n"
+                "✅ Alta velocidade.\n"
+                "✅ Catálogo completo liberado.\n\n"
+                "⏳ <i>Seu tempo já está contando... Corra para maratonar!</i>\n\n"
+                "👇 <b>Gostou? Garanta 30 DIAS por preço de banana aqui:</b>"
+            )
+            
+            # Botão de venda imediata
+            keyboard_trial = [
+                [InlineKeyboardButton("💎 Quero garantir 30 Dias de VIP!", callback_data="main_vip")],
+                [InlineKeyboardButton("🔎 Ir para o Catálogo (Teste Grátis)", switch_inline_query_current_chat="")]
+            ]
+            
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=trial_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard_trial)
+            )
+            
         config = await db.get_bot_config()
         price = config.get('vip_price', 4.99)
         is_free = price <= 0

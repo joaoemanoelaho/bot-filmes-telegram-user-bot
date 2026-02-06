@@ -19,7 +19,7 @@ _bot_config_cache = None
 _config_cache_time = 0
 
 VIP_CACHE = {}
-CACHE_TTL = 60
+CACHE_TTL = 300
 
 # Tenta criar a conexão com o Supabase.
 try:
@@ -83,7 +83,7 @@ async def set_bot_config_value(key: str, value) -> bool:
 
 # 2. TODAS as funções que falam com o DB agora são 'async def'
 # e usam 'await asyncio.to_thread'
-async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
+async def get_or_create_user(user_id: int, first_name: str) -> tuple[dict, bool]:
     """
     Verifica se um usuário existe no DB pelo seu ID.
     Se não existir, cria um novo registro.
@@ -92,7 +92,7 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
     """
     if not supabase:
         print("Conexão com Supabase não disponível.")
-        return None
+        return None, False
 
     # Tenta buscar o usuário na tabela 'users'
     response = await asyncio.to_thread(
@@ -101,21 +101,35 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
     
     # Se a lista 'data' da resposta estiver vazia, o usuário não existe
     if not response.data:
-        print(f"Usuário {user_id} não encontrado. Criando novo registro.")
+        print(f"🎉 Novo usuário detectado: {user_id}. Aplicando Trial de 4h...")
+        
+        # Define 4 horas a partir de agora (UTC)
+        trial_end = datetime.utcnow() + timedelta(hours=4)
+        
         try:
             insert_response = await asyncio.to_thread(
                 supabase.table('users').insert({
                     'user_id': user_id,
-                    'first_name': first_name
-                    # 'is_active' será TRUE por padrão (definido no SQL)
+                    'first_name': first_name,
+                    'is_vip': True,                     # <--- JÁ NASCE VIP
+                    'vip_until': trial_end.isoformat(), # <--- VALIDADE DE 4H
+                    'is_active': True
                 }).execute
             )
             
             if insert_response.data:
-                return insert_response.data[0]
+                # Atualiza o Cache IMEDIATAMENTE para ele não ser bloqueado
+                current_time = time.time()
+                if 'VIP_CACHE' in globals():
+                    globals()['VIP_CACHE'][user_id] = {
+                        'status': True,
+                        'expires_at': current_time + (4 * 3600) # Cache de 4h
+                    }
+                
+                return insert_response.data[0], True # True indica que é NOVO
         except Exception as e:
-            print(f"Erro ao inserir novo usuário: {e}")
-            return None
+            print(f"Erro ao inserir novo usuário trial: {e}")
+            return None, False
     
     # Se o usuário já existe, verifica se está ativo
     print(f"Usuário {user_id} encontrado no banco de dados.")
@@ -138,7 +152,7 @@ async def get_or_create_user(user_id: int, first_name: str) -> dict | None:
             print(f"Erro ao REATIVAR usuário {user_id}: {e}")
     # --- FIM DA LÓGICA ---
     
-    return user_data
+    return user_data, False
 
 async def get_user_details(user_id: int):
     """Busca todos os detalhes de um usuário."""
