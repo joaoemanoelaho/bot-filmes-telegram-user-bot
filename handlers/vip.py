@@ -30,7 +30,7 @@ async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Mostra o texto de venda com o botão "Gerar PIX"
             await safe_call(query, "edit_message_text",
                 text=sales_text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=reply_markup
             )
         except Exception as e:
