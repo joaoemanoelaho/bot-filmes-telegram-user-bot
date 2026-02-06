@@ -43,6 +43,8 @@ SYNCPAY_BASE_URL = os.getenv("SYNCPAY_BASE_URL")
 SYNCPAY_CLIENT_ID = os.getenv("SYNCPAY_CLIENT_ID")
 SYNCPAY_CLIENT_SECRET = os.getenv("SYNCPAY_CLIENT_SECRET")
 
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+
 # Dados "Padrão" para gerar o QR Code (Já que o bot não pede CPF pro usuário)
 # Use um CPF válido (pode ser o seu ou de um laranja/sócio), senão a API rejeita.
 DEFAULT_PAYER = {

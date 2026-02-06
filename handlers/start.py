@@ -68,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             await context.bot.send_message( 
                                 chat_id=user.id,
                                 text=f"Opa, {user.first_name}! 👋\n\n{sales_text}",
-                                parse_mode="Markdown",
+                                parse_mode="HTML",
                                 reply_markup=reply_markup
                             )
                             return
@@ -242,7 +242,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         else:
                             context.user_data['update'] = update
                             sales_text, reply_markup = await _get_vip_sales_message(context)
-                            await context.bot.send_message(chat_id=user.id, text=f"Opa, {user.first_name}! 👋\n\n{sales_text}", parse_mode="Markdown", reply_markup=reply_markup)
+                            await context.bot.send_message(chat_id=user.id, text=f"Opa, {user.first_name}! 👋\n\n{sales_text}", parse_mode="HTML", reply_markup=reply_markup)
                             return
 
                     status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando seu episódio...")
@@ -274,11 +274,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 # --- CORREÇÃO: Chamada direta sem simular botão ---
                 # Isso evita importar handlers que não existem mais ou mudaram de nome.
                 sales_text, reply_markup = await _get_vip_sales_message(context)
+
+                direct_keyboard = [
+                    [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+                    [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
+                ]
+
                 await context.bot.send_message(
                     chat_id=user.id, 
                     text=f"Opa, {user.first_name}! 👋\n\n{sales_text}", 
-                    parse_mode="Markdown", 
-                    reply_markup=reply_markup
+                    parse_mode="HTML", 
+                    reply_markup=InlineKeyboardMarkup(direct_keyboard)
                 )
                 return
 

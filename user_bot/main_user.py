@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import json
+import secrets
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
@@ -29,7 +30,7 @@ from handlers import (
 )
 from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler
 # CERTIFIQUE-SE QUE ESTAS VARIÁVEIS ESTÃO NO SEU CONFIG.PY
-from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH
+from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH, WEBHOOK_SECRET
 
 # --- DEBUG PRINT ---
 print("[DEBUG] Versão do código: 2.0 (SyncPay Integration)")
@@ -169,6 +170,16 @@ async def telegram_webhook(request: Request) -> Response:
 # ==========================================================
 async def syncpay_webhook(request: Request) -> Response:
     await APP_INITIALIZED.wait()
+
+    # === 🔒 BLINDAGEM DE SEGURANÇA ===
+    # Pega a senha que veio na URL
+    secret_token = request.query_params.get('secret')
+    
+    # Verifica se a senha é EXATAMENTE igual a que você colocou no payments.py
+    if secret_token or not secrets.compare_digest(secret_token, WEBHOOK_SECRET):
+        print(f"[ALERTA DE SEGURANÇA] 🚨 Tentativa de invasão bloqueada! IP tentou acessar sem senha.")
+        return JSONResponse({"status": "error", "message": "Acesso Negado. Senha incorreta."}, status_code=403)
+    # =================================
     
     # 1. Captura e validação do User ID na URL
     raw_user_id = request.path_params.get('user_id')

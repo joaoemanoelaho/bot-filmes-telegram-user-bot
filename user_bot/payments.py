@@ -12,7 +12,8 @@ from config import (
     SYNCPAY_CLIENT_SECRET,
     SYNCPAY_BASE_URL,
     WEBHOOK_DOMAIN,     # Ex: https://seu-site.com
-    DEFAULT_PAYER       # O dicionário com o CPF padrão
+    DEFAULT_PAYER,
+    WEBHOOK_SECRET
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ class SyncPayAPI:
         }
 
         # URL Dinâmica para identificar o usuário no Webhook
-        user_webhook_url = f"{WEBHOOK_DOMAIN}/webhook/syncpay/{user_id}"
+        user_webhook_url = f"{WEBHOOK_DOMAIN}/webhook/syncpay/{user_id}?secret={WEBHOOK_SECRET}"
 
         payload = {
             "amount": float(amount),

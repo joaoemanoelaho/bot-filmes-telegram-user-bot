@@ -19,7 +19,7 @@ _bot_config_cache = None
 _config_cache_time = 0
 
 VIP_CACHE = {}
-CACHE_TTL = 300
+CACHE_TTL = 60
 
 # Tenta criar a conexão com o Supabase.
 try:
@@ -270,20 +270,27 @@ async def get_trending(period_days: int = 0) -> list:
         return []
     
 async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:
-    """Atualiza o status de um usuário para VIP."""
+    """Atualiza o status de um usuário para VIP e JÁ ATUALIZA O CACHE."""
     if not supabase:
         return False
     
     expiration_date = datetime.utcnow() + timedelta(days=duration_days)
     
     try:
+        # 1. Atualiza no Banco de Dados (Supabase)
         await asyncio.to_thread(
             supabase.table('users').update({
                 'is_vip': True,
                 'vip_until': expiration_date.isoformat()
             }).eq('user_id', user_id).execute
         )
-        print(f"Usuário {user_id} agora é VIP por {duration_days} dias.")
+        
+        # 2. Atualiza na Memória RAM (Cache) IMEDIATAMENTE 🚀
+        # Assim o usuário não precisa esperar o tempo do cache vencer!
+        VIP_CACHE[user_id] = {
+            'status': True,
+            'expires_at': time.time() + CACHE_TTL
+        }
         return True
     except Exception as e:
         print(f"Erro ao atualizar usuário para VIP: {e}")
