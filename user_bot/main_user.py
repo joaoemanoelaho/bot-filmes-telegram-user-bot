@@ -176,7 +176,7 @@ async def syncpay_webhook(request: Request) -> Response:
     secret_token = request.query_params.get('secret')
     
     # Verifica se a senha é EXATAMENTE igual a que você colocou no payments.py
-    if secret_token or not secrets.compare_digest(secret_token, WEBHOOK_SECRET):
+    if not secret_token or not secrets.compare_digest(secret_token, WEBHOOK_SECRET):
         print(f"[ALERTA DE SEGURANÇA] 🚨 Tentativa de invasão bloqueada! IP tentou acessar sem senha.")
         return JSONResponse({"status": "error", "message": "Acesso Negado. Senha incorreta."}, status_code=403)
     # =================================
