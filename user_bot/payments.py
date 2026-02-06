@@ -10,12 +10,11 @@ from datetime import datetime, timedelta
 from config import (
     SYNCPAY_CLIENT_ID, 
     SYNCPAY_CLIENT_SECRET,
+    SYNCPAY_BASE_URL,
     WEBHOOK_DOMAIN,     # Ex: https://seu-site.com
     DEFAULT_PAYER       # O dicionário com o CPF padrão
 )
 
-# Configuração
-BASE_API_URL = "https://api.syncpay.com.br" # Confirme se é .com.br ou .net no suporte
 logger = logging.getLogger(__name__)
 
 class SyncPayAPI:
@@ -31,7 +30,7 @@ class SyncPayAPI:
         if self.access_token and datetime.now() < (self.token_expires_at - timedelta(minutes=5)):
             return self.access_token
 
-        url = f"{BASE_API_URL}/api/partner/v1/auth-token"
+        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/auth-token"
         
         payload = {
             "client_id": SYNCPAY_CLIENT_ID,
@@ -80,7 +79,7 @@ class SyncPayAPI:
         token = await self._get_auth_token()
         if not token: return None
 
-        url = f"{BASE_API_URL}/api/partner/v1/cash-in"
+        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/cash-in"
         
         headers = {
             "Authorization": f"Bearer {token}",
@@ -129,7 +128,7 @@ class SyncPayAPI:
         token = await self._get_auth_token()
         if not token: return None
 
-        url = f"{BASE_API_URL}/api/partner/v1/transaction/{payment_id}"
+        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/transaction/{payment_id}"
         headers = {"Authorization": f"Bearer {token}"}
 
         async with aiohttp.ClientSession() as session:
