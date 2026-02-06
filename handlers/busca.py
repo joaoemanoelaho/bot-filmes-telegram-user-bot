@@ -139,8 +139,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                         )
                                     ]]),
                                 input_message_content=InputTextMessageContent(
-                                    message_text=(f"Ei {update.inline_query.from_user.first_name}! 👋\n\nPara maratonar esta e **todas as outras séries**, você precisa do 🍿 **Acesso Pipoca Premium**!"),
-                                    parse_mode="Markdown",
+                                    message_text=(f"Ei {update.inline_query.from_user.first_name}! 👋\n\nPara maratonar esta e <b>todas as outras séries</b>, você precisa do 🍿 <b>Acesso Pipoca Premium</b>!"),
+                                    parse_mode="HTML",
                                 )
                             )
                         )

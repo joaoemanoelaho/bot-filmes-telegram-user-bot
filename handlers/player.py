@@ -40,7 +40,7 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.send_message( 
                     chat_id=user_id,
                     text=f"Opa, {update.effective_user.first_name}! 👋\n\n{sales_text}",
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=reply_markup
                 )
                 return
