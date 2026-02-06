@@ -244,10 +244,19 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not await db.is_user_vip(user_id):
                 config = await db.get_bot_config()
                 if config.get('vip_price', 0) > 0:
-                     context.user_data['update'] = update
-                     sales_text, markup = await _get_vip_sales_message(context)
-                     await safe_call(query, "edit_message_text", text=sales_text, reply_markup=markup, parse_mode="Markdown")
-                     return
+                      sales_text, _ = await _get_vip_sales_message(context)
+                      
+                      keyboard = [
+                          [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+                          [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
+                      ]
+                      
+                      await safe_call(query, "edit_message_text", 
+                          text=sales_text, 
+                          reply_markup=InlineKeyboardMarkup(keyboard), 
+                          parse_mode="HTML"
+                      )
+                      return
             
             await safe_call(query, "answer")
             keyboard = [

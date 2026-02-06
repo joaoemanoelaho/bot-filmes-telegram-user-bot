@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from handlers.common import DB_SEMAPHORE, safe_call, _get_vip_sales_message
 import database as db
@@ -16,9 +16,19 @@ async def request_start_callback(update: Update, context: ContextTypes.DEFAULT_T
             config = await db.get_bot_config()
             price = config.get('vip_price', 4.99)
             if price > 0:
-                context.user_data['update'] = update
-                sales_text, reply_markup = await _get_vip_sales_message(context)
-                await safe_call(query, "edit_message_text", text=f"Opa! 👋\n\n{sales_text}", parse_mode="Markdown", reply_markup=reply_markup)
+                # --- CORREÇÃO: Botão Direto para o PIX + HTML ---
+                sales_text, _ = await _get_vip_sales_message(context)
+                
+                keyboard = [
+                    [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+                    [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]
+                ]
+                
+                await safe_call(query, "edit_message_text", 
+                    text=f"Opa! 👋\n\n{sales_text}", 
+                    parse_mode="HTML", 
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
                 return
 
         # 2. Inicia o fluxo

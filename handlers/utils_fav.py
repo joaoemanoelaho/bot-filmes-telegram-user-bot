@@ -5,7 +5,7 @@ import asyncio
 import database as db
 from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 from handlers.common import (
-    DB_SEMAPHORE, safe_call, delete_message_job, get_fav_keyboard_markup
+    DB_SEMAPHORE, safe_call, delete_message_job, get_fav_keyboard_markup, _get_vip_sales_message
 )
 
 async def fav_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,6 +120,26 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     callback_data = query.data
     
     async with DB_SEMAPHORE:
+        if not await db.is_user_vip(user_id):
+            config = await db.get_bot_config()
+            price = config.get('vip_price', 4.99)
+            if price > 0:
+                # Mostra a tela de venda com botão de PIX direto
+                sales_text, _ = await _get_vip_sales_message(context)
+                
+                keyboard = [
+                    [InlineKeyboardButton("✅ Sim, Gerar PIX para Pagar!", callback_data="confirm_pay")],
+                    [InlineKeyboardButton("⬅️ Voltar", callback_data="fav_menu")] # Volta pra lista em vez do menu principal
+                ]
+                
+                # Edita a mensagem para mostrar o aviso de VIP
+                await safe_call(query, "edit_message_text", 
+                    text=f"🔒 **Conteúdo Exclusivo VIP**\n\n{sales_text}", 
+                    parse_mode="HTML", 
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+            
         unique_code = callback_data.replace("fav_watch_", "")
         fav_item = await db.get_favorite_item(user_id, unique_code)
         
