@@ -39,6 +39,16 @@ async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback para o botão 'confirm_pay'."""
     query = update.callback_query
+
+    # === ADICIONE ESTE BLOCO AQUI (INÍCIO) ===
+    # Isso fará aparecer um popup na tela do usuário e para o código aqui.
+    await safe_call(query, "answer", 
+        text="⚠️ O sistema PIX está em manutenção aguardando liberação bancária.\n\nTente novamente mais tarde!", 
+        show_alert=True
+    )
+    return # Esse return é importante para parar o resto do código
+    # === FIM DO BLOCO ===
+
     user_id = query.from_user.id
     
     # ETAPA 2: Gerar o PIX
