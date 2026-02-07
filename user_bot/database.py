@@ -252,35 +252,33 @@ async def add_request(user_id: int, title: str) -> bool:
         print(f"Erro ao salvar pedido no Supabase: {e}")
         return False
     
-async def log_movie_view(movie_id: int, user_id: int):
-    """Registra um evento de visualização na tabela view_history."""
-    if not supabase:
-        return
+async def log_movie_view(user_id: int, movie_id: int = None, series_id: int = None):
+    """Registra visualização de Filme OU Série."""
+    if not supabase: return
     try:
+        data = {'user_id': user_id}
+        if movie_id:
+            data['movie_id'] = movie_id
+        if series_id:
+            data['series_id'] = series_id
+            
         await asyncio.to_thread(
-            supabase.table('view_history').insert({
-                'movie_id': movie_id,
-                'user_id': user_id
-            }).execute
+            supabase.table('view_history').insert(data).execute
         )
-        print(f"Registrada visualização para o filme ID {movie_id} pelo usuário {user_id}")
+        # print(f"Visualização registrada para {data}")
     except Exception as e:
-        print(f"Erro ao registrar visualização: {e}")
+        print(f"Erro ao registrar view: {e}")
 
 async def get_trending(period_days: int = 0) -> list:
-    """
-    Busca os filmes mais vistos em um determinado período.
-    period_days = 7 para semanal, 30 para mensal, 0 para geral.
-    """
-    if not supabase:
-        return []
+    """Busca o Top 10 Misto (Filmes e Séries)."""
+    if not supabase: return []
     try:
         response = await asyncio.to_thread(
-            supabase.rpc('get_trending_movies', {'period_days': period_days}).execute
+            supabase.rpc('get_trending_mixed', {'period_days': period_days}).execute
         )
         return response.data
     except Exception as e:
-        print(f"Erro ao buscar trending: {e}")
+        print(f"Erro ao buscar trending misto: {e}")
         return []
     
 async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:

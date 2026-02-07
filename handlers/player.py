@@ -307,8 +307,23 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             keyboard = []
-            for m in trending:
-                keyboard.append([InlineKeyboardButton(f"{m['title']} ({m['year']})", callback_data=f"show_card_{m['movie_id']}")])
+            for item in trending:
+                # Agora o banco retorna uma coluna 'type' ('movie' ou 'series')
+                media_type = item.get('type', 'movie') 
+                title = item['title']
+                year = item['year']
+                media_id = item['id'] # O ID agora vem na coluna genérica 'id'
+                
+                if media_type == 'movie':
+                    # Se for FILME: Ícone 🎬 e abre o Card normal
+                    btn_text = f"🎬 {title} ({year})"
+                    callback = f"show_card_{media_id}"
+                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback)])
+                else:
+                    # Se for SÉRIE: Ícone 📺 e faz a busca dos episódios
+                    btn_text = f"📺 {title} ({year})"
+                    keyboard.append([InlineKeyboardButton(btn_text, switch_inline_query_current_chat=title)])
+
             keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="main_top")])
             
             await safe_call(query, "edit_message_text", text=f"🏆 **Top 10 {period_text}**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
