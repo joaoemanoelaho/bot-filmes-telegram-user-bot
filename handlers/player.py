@@ -302,7 +302,10 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             if reply_markup:
-                await placeholder_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="Markdown")
+                try:
+                    await placeholder_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="HTML")
+                except:
+                    await placeholder_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="Markdown")
             else:
                 await placeholder_msg.edit_text(message_text)
 
