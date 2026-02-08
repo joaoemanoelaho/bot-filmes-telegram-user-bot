@@ -3,10 +3,27 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 import asyncio
 import database as db
+from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES, FSUB_GROUP_LINK, FSUB_CHANNEL_LINK, FSUB_CHANNEL_ID, FSUB_GROUP_ID
 from handlers.common import (
     DB_SEMAPHORE, safe_call, _get_vip_sales_message, 
     _get_episode_details_message, delete_message_job
 )
+
+async def verificar_inscricao(bot, user_id):
+    status_aceitos = ['member', 'administrator', 'creator']
+    # O Bot checa usando IDs, não Links!
+    chats_para_verificar = [FSUB_CHANNEL_ID, FSUB_GROUP_ID] 
+    
+    for chat_id in chats_para_verificar:
+        try:
+            membro = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+            if membro.status not in status_aceitos:
+                return False
+        except BadRequest:
+            pass 
+        except Exception:
+            pass
+    return True
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # --- CORREÇÃO AQUI: Importamos apenas o watch_command_handler ---
@@ -34,6 +51,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
             # ROTA 1: Assistir Episódio (watch_ep_)
             if payload.startswith("watch_ep_"):
+                esta_inscrito = await verificar_inscricao(context.bot, user.id)
+
+                if not esta_inscrito:
+                    # Link genérico para recarregar o start com o mesmo payload
+                    link_recarregar = f"https://t.me/{context.bot.username}?start={payload}"
+                    
+                    keyboard_fsub = [
+                        [InlineKeyboardButton("📢 Entrar no Canal", url=FSUB_CHANNEL_LINK)],
+                        # ⚠️ TROQUE ESTE LINK PELO LINK DE CONVITE DO SEU GRUPO
+                        [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
+                        [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", url=link_recarregar)]
+                    ]
+                    
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text="🚫 **Acesso Restrito!**\n\nPara assistir a este episódio, você precisa entrar nos nossos canais oficiais.",
+                        reply_markup=InlineKeyboardMarkup(keyboard_fsub)
+                    )
+                    return
                 try:
                     parts = payload.split('_')
                     episode_id = int(parts[2])
@@ -265,6 +301,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
             # ROTA 3: Assistir Filme (watch_)
             elif payload.startswith("watch_"):
+                esta_inscrito = await verificar_inscricao(context.bot, user.id)
+                if not esta_inscrito:
+                    link_recarregar = f"https://t.me/{context.bot.username}?start={payload}"
+                    keyboard_fsub = [
+                        [InlineKeyboardButton("📢 Entrar no Canal", url=f"https://t.me/{FSUB_CHANNEL_LINK.replace('@', '')}")],
+                        [InlineKeyboardButton("💬 Entrar no Grupo", url="https://t.me/+SEU_LINK_DO_GRUPO")], 
+                        [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", url=link_recarregar)]
+                    ]
+                    await context.bot.send_message(chat_id=user.id, text="🚫 **Acesso Restrito!**\nEntre nos canais para assistir.", reply_markup=InlineKeyboardMarkup(keyboard_fsub))
+                    return
+                
                 context.args = [payload.split('_')[1]]
                 # Chama o handler que importamos de player.py
                 await watch_command_handler(update, context, message_deletada=True)

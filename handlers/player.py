@@ -5,11 +5,27 @@ from telegram.error import BadRequest
 import asyncio
 import database as db
 import tastedive_api
-from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
+from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES, FSUB_CHANNEL_LINK, FSUB_GROUP_LINK, FSUB_CHANNEL_ID, FSUB_GROUP_ID
 from handlers.common import (
     DB_SEMAPHORE, safe_call, delete_message_job, 
     _get_episode_details_message, _get_vip_sales_message
 )
+
+async def verificar_inscricao(bot, user_id):
+    status_aceitos = ['member', 'administrator', 'creator']
+    # O Bot checa usando IDs, não Links!
+    chats_para_verificar = [FSUB_CHANNEL_ID, FSUB_GROUP_ID] 
+    
+    for chat_id in chats_para_verificar:
+        try:
+            membro = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+            if membro.status not in status_aceitos:
+                return False
+        except BadRequest:
+            pass 
+        except Exception:
+            pass
+    return True
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, message_deletada: bool = False) -> None:
     async with DB_SEMAPHORE:
@@ -90,6 +106,40 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 1. PLAY MOVIE (play_)
     if callback_data.startswith("play_"):
+
+        esta_inscrito = await verificar_inscricao(context.bot, user_id)
+        if not esta_inscrito:
+            # Monta os botões com os links dos canais
+            # Nota: Para grupo privado, use o Link de Convite. Para público, use o @username ou link.
+            # Como o grupo é ID numérico, ele provavelmente é privado ou você tem o link de convite.
+            # Vou colocar links genéricos, substitua pelos seus links reais de convite se precisar
+            
+            keyboard_fsub = [
+                [InlineKeyboardButton("📢 Entrar no Canal", url=FSUB_CHANNEL_LINK)],
+                [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
+                [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", callback_data=callback_data)]
+            ]
+            
+            # Se for possível editar a legenda da foto (se a mensagem anterior for foto)
+            try:
+                await query.answer("🔒 Acesso Restrito!", show_alert=True)
+                await safe_call(query, "edit_message_caption", 
+                    caption="🚫 **Acesso Restrito!**\n\n"
+                            "Para assistir, você precisa fazer parte da nossa comunidade.\n\n"
+                            "1️⃣ Entre no **Canal Oficial**\n"
+                            "2️⃣ Entre no **Grupo de Chat**\n"
+                            "3️⃣ Clique em **Tentar Novamente**",
+                    reply_markup=InlineKeyboardMarkup(keyboard_fsub)
+                )
+            except:
+                # Se não der pra editar caption (ex: era texto), manda msg nova
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="🚫 **Acesso Restrito!**\nEntre nos canais abaixo para liberar o vídeo.",
+                    reply_markup=InlineKeyboardMarkup(keyboard_fsub)
+                )
+            return
+        
         now = time.time()
         last_request = context.user_data.get('last_action_time', 0)
         cooldown = 10

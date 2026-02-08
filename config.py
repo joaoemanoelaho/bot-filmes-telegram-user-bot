@@ -54,6 +54,12 @@ DEFAULT_PAYER = {
     "phone": os.getenv("PAYER_PHONE")
 }
 
+FSUB_GROUP_ID = int(os.getenv("FSUB_GROUP_ID"))
+FSUB_CHANNEL_ID = os.getenv("FSUB_CHANNEL_ID")
+
+FSUB_GROUP_LINK = os.getenv("FSUB_GROUP_LINK")
+FSUB_CHANNEL_LINK = os.getenv("FSUB_CHANNEL_LINK")
+
 # Validações
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN não configurado!")
