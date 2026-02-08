@@ -66,7 +66,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     
                     await context.bot.send_message(
                         chat_id=user.id,
-                        text="🚫 **Acesso Restrito!**\n\nPara assistir a este episódio, você precisa entrar nos nossos canais oficiais.",
+                        text="🚫 <b>Acesso Restrito!</b>\n\nPara assistir a este episódio, você precisa entrar nos nossos canais oficiais.",
+                        parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(keyboard_fsub)
                     )
                     return
@@ -144,11 +145,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         series_id_for_related = series_data.get('id', 0)
 
                         video_caption = (
-                            f"📺 *{series_title}*\n"
-                            f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: *{episode_data.get('title', 'Episódio')}* {audio_text}\n\n"
+                            f"📺 <b>{series_title}</b>\n"
+                            f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: <b>{episode_data.get('title', 'Episódio')}</b> {audio_text}\n\n"
                             f"---\n"
                             f"🍿 Assistido com @{bot_username}\n"
-                            f"⚠️ *Este vídeo será apagado em 4 horas.*"
+                            f"⚠️ <b>Este vídeo será apagado em 4 horas.</b>"
                         )
 
                         # Lógica de navegação otimizada
@@ -207,7 +208,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 chat_id=user.id,
                                 video=file_id_to_send,
                                 caption=video_caption,
-                                parse_mode="Markdown",
+                                parse_mode="HTML",
                                 reply_markup=video_reply_markup,
                                 protect_content=True
                             )
@@ -236,7 +237,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         chat_id=user.id,
                                         message_id=copied_message.message_id,
                                         caption=video_caption,
-                                        parse_mode="Markdown",
+                                        parse_mode="HTML",
                                         reply_markup=video_reply_markup
                                     )
                                     job_data = {'chat_id': user.id, 'message_id': copied_message.message_id}
@@ -291,7 +292,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
 
                     if reply_markup:
-                        await status_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="Markdown")
+                        try:
+                            await status_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="HTML")
+                        except:
+                            await status_msg.edit_text(text=message_text, reply_markup=reply_markup, parse_mode="Markdown")
                     else:
                         await status_msg.edit_text(text=message_text)
                 except Exception as e:
@@ -309,7 +313,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
                         [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", url=link_recarregar)]
                     ]
-                    await context.bot.send_message(chat_id=user.id, text="🚫 **Acesso Restrito!**\nEntre nos canais para assistir.", reply_markup=InlineKeyboardMarkup(keyboard_fsub))
+                    await context.bot.send_message(chat_id=user.id, text="🚫 <b>Acesso Restrito!</b>\nEntre nos canais para assistir.", parse_mode="HTML",reply_markup=InlineKeyboardMarkup(keyboard_fsub))
                     return
                 
                 context.args = [payload.split('_')[1]]
@@ -390,17 +394,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         main_menu = InlineKeyboardMarkup(keyboard)
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
-        ads_channel_link = "https://t.me/meucinepipocacanal"
-
-        ads_channel_text = (
-            "Para manter o bot 100% gratuito, preciso da sua ajuda!\n"
-            f"➡️ <a href=\"{ads_channel_link}\"><b>Entre no nosso Canal de Avisos</b></a> ⬅️\n"
-            "É lá que posto os anúncios que pagam o servidor."
-        )
-        community_text = (
-            "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
-            f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
-        )
         welcome_text = (
             f"Olá {user.mention_html()}! 👋\n\n"
             "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b> 🍿\n\n"
@@ -439,17 +432,17 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     help_text = (
         "Olá! Eu sou o Cine Pipoca, seu assistente de filmes e séries. Veja como me usar:\n\n"
-        "🔎 **Para Buscar:**\n"
-        "Vá em qualquer chat, digite o `@username` do bot e comece a escrever o nome do filme ou série. Uma lista de resultados aparecerá!\n\n"
-        "💡 **Pedir um Filme/Série:**\n"
+        "🔎 <b>Para Buscar:</b>\n"
+        "Vá em qualquer chat, digite o <code>@username</code> do bot e comece a escrever o nome do filme ou série. Uma lista de resultados aparecerá!\n\n"
+        "💡 <b>Pedir um Filme/Série:</b>\n"
         "Use o botão 'Pedir Filme/Série' no menu principal para sugerir um título que você não encontrou.\n\n"
-        "🏆 **Top Mídia:**\n"
+        "🏆 <b>Top Mídia:</b>\n"
         "Quer saber o que está em alta? Clique no botão 'Top Mídia' no menu e escolha o período.\n\n"
-        "🚀 **Acesso Pipoca Premium:**\n"
+        "🚀 <b>Acesso Pipoca Premium:</b>\n"
         "O acesso Premium te dá direito a assistir todo o catálogo. Você pode adquirir o seu através do botão no menu principal."
     )
     help_text = help_text.replace("@username", f"@{context.bot.username}")
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await update.message.reply_text(help_text, parse_mode="HTML")
 
 async def back_to_main_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

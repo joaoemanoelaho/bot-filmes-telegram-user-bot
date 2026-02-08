@@ -71,9 +71,9 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 audio_buttons.append(InlineKeyboardButton("Legendado 🇺🇸", callback_data=f"play_{movie_id}_sub"))
 
             caption = (
-                f"🎬 *{movie['title']}* ({movie['year']})\n\n"
-                f"🎭 *Gênero:* {movie.get('genre', 'N/A')}\n\n"
-                f"📝 *Sinopse:* {movie.get('description', 'N/A')}\n\n"
+                f"🎬 <b>{movie['title']}</b> ({movie['year']})\n\n"
+                f"🎭 <b>Gênero:</b> {movie.get('genre', 'N/A')}\n\n"
+                f"📝 <b>Sinopse:</b> {movie.get('description', 'N/A')}\n\n"
                 "---\n"
             )
 
@@ -84,13 +84,13 @@ async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 keyboard.append(audio_buttons)
                 reply_markup = InlineKeyboardMarkup(keyboard)
             else:
-                caption += "😔 *Este filme está no catálogo, mas ainda estamos aguardando os arquivos de vídeo.*"
+                caption += "😔 <b>Este filme está no catálogo, mas ainda estamos aguardando os arquivos de vídeo.</b>"
 
             await context.bot.send_photo(
                 chat_id=chat_id_to_reply,
                 photo=movie['poster_url'],
                 caption=caption,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=reply_markup
             )
         else:
@@ -109,11 +109,6 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         esta_inscrito = await verificar_inscricao(context.bot, user_id)
         if not esta_inscrito:
-            # Monta os botões com os links dos canais
-            # Nota: Para grupo privado, use o Link de Convite. Para público, use o @username ou link.
-            # Como o grupo é ID numérico, ele provavelmente é privado ou você tem o link de convite.
-            # Vou colocar links genéricos, substitua pelos seus links reais de convite se precisar
-            
             keyboard_fsub = [
                 [InlineKeyboardButton("📢 Entrar no Canal", url=FSUB_CHANNEL_LINK)],
                 [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
@@ -124,18 +119,18 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.answer("🔒 Acesso Restrito!", show_alert=True)
                 await safe_call(query, "edit_message_caption", 
-                    caption="🚫 **Acesso Restrito!**\n\n"
+                    caption="🚫 <b>Acesso Restrito!</b>\n\n"
                             "Para assistir, você precisa fazer parte da nossa comunidade.\n\n"
-                            "1️⃣ Entre no **Canal Oficial**\n"
-                            "2️⃣ Entre no **Grupo de Chat**\n"
-                            "3️⃣ Clique em **Tentar Novamente**",
+                            "1️⃣ Entre no <b>Canal Oficial</b>\n"
+                            "2️⃣ Entre no <b>Grupo de Chat</b>\n"
+                            "3️⃣ Clique em <b>Tentar Novamente</b>",
                     reply_markup=InlineKeyboardMarkup(keyboard_fsub)
                 )
             except:
                 # Se não der pra editar caption (ex: era texto), manda msg nova
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text="🚫 **Acesso Restrito!**\nEntre nos canais abaixo para liberar o vídeo.",
+                    text="🚫 <b>Acesso Restrito!</b>\nEntre nos canais abaixo para liberar o vídeo.",
                     reply_markup=InlineKeyboardMarkup(keyboard_fsub)
                 )
             return
@@ -167,11 +162,11 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_call(query, "delete_message")
                 bot_username = context.bot.username
                 video_caption = (
-                    f"🎬 *{movie['title']}* ({movie['year']})\n\n"
-                    f"🎭 *Gênero:* {movie['genre']}\n\n"
+                    f"🎬 <b>{movie['title']}</b> ({movie['year']})\n\n"
+                    f"🎭 <b>Gênero:</b> {movie['genre']}\n\n"
                     f"---\n"
                     f"🍿 Assistido com @{bot_username}\n"
-                    f"⚠️ *Este vídeo será apagado em 4 horas.*"
+                    f"⚠️ <b>Este vídeo será apagado em 4 horas.</b>"
                 )
 
                 fav_unique_code = f"mov_{movie_id}_{audio_choice}"
@@ -191,7 +186,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=query.message.chat.id,
                         video=file_id_to_send,
                         caption=video_caption,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         reply_markup=video_reply_markup,
                         protect_content=True
                     )
@@ -211,7 +206,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 chat_id=query.message.chat.id,
                                 message_id=copied_message.message_id,
                                 caption=video_caption,
-                                parse_mode="Markdown",
+                                parse_mode="HTML",
                                 reply_markup=video_reply_markup
                             )
                             job_data = {'chat_id': query.message.chat.id, 'message_id': copied_message.message_id}
@@ -255,7 +250,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title_current = media_obj.get('title', 'Desconhecido')
             genre_current = media_obj.get('genre', '')
             
-            status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔍 Buscando filmes e séries parecidos com **'{title_current}'**...")
+            status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔍 Buscando filmes e séries parecidos com <b>'{title_current}'</b>...", parse_mode="HTML")
             
             # 2. Buscar Recomendações MISTAS no Banco
             recommendations = await db.get_mixed_recommendations(genre_current, limit=6)
@@ -283,9 +278,9 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="back_to_main")])
             
             await status_msg.edit_text(
-                text=f"🍿 **Porque você gosta de {genre_current}:**\nAqui estão sugestões do nosso catálogo:",
+                text=f"🍿 <b>Porque você gosta de {genre_current}:</b>\nAqui estão sugestões do nosso catálogo:",
                 reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             context.user_data['last_action_time'] = time.time()
 
@@ -376,7 +371,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="main_top")])
             
-            await safe_call(query, "edit_message_text", text=f"🏆 **Top 10 {period_text}**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await safe_call(query, "edit_message_text", text=f"🏆 <b>Top 10 {period_text}</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif callback_data.startswith("show_card_"):
         async with DB_SEMAPHORE:
@@ -396,6 +391,6 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("Assistir ⏯️", url=url),
                 InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])
             ]]
-            caption = f"🎬 *{movie['title']}* ({movie['year']})\n🎭 {movie.get('genre', 'N/A')}"
+            caption = f"🎬 <b>{movie['title']}</b> ({movie['year']})\n🎭 {movie.get('genre', 'N/A')}"
             
-            await context.bot.send_photo(chat_id=user_id, photo=movie['poster_url'], caption=caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await context.bot.send_photo(chat_id=user_id, photo=movie['poster_url'], caption=caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
