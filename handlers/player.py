@@ -124,6 +124,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             "1️⃣ Entre no <b>Canal Oficial</b>\n"
                             "2️⃣ Entre no <b>Grupo de Chat</b>\n"
                             "3️⃣ Clique em <b>Tentar Novamente</b>",
+                    parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(keyboard_fsub)
                 )
             except:
