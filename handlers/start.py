@@ -305,8 +305,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if not esta_inscrito:
                     link_recarregar = f"https://t.me/{context.bot.username}?start={payload}"
                     keyboard_fsub = [
-                        [InlineKeyboardButton("📢 Entrar no Canal", url=f"https://t.me/{FSUB_CHANNEL_LINK.replace('@', '')}")],
-                        [InlineKeyboardButton("💬 Entrar no Grupo", url="https://t.me/+SEU_LINK_DO_GRUPO")], 
+                        [InlineKeyboardButton("📢 Entrar no Canal", url=FSUB_CHANNEL_LINK)],
+                        [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
                         [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", url=link_recarregar)]
                     ]
                     await context.bot.send_message(chat_id=user.id, text="🚫 **Acesso Restrito!**\nEntre nos canais para assistir.", reply_markup=InlineKeyboardMarkup(keyboard_fsub))
