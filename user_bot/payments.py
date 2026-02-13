@@ -11,8 +11,7 @@ from config import (
     SYNCPAY_CLIENT_ID, 
     SYNCPAY_CLIENT_SECRET,
     SYNCPAY_BASE_URL,
-    WEBHOOK_DOMAIN,     # Ex: https://seu-site.com
-    DEFAULT_PAYER,
+    WEBHOOK_DOMAIN,
     WEBHOOK_SECRET
 )
 
@@ -95,7 +94,6 @@ class SyncPayAPI:
             "amount": float(amount),
             "description": f"VIP-{user_id}",
             "webhook_url": user_webhook_url, # Syncpay avisará aqui
-            "client": DEFAULT_PAYER # Dados padrão para agilizar a venda
         }
 
         async with aiohttp.ClientSession() as session:
