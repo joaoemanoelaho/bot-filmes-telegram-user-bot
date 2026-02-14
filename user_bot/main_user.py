@@ -207,7 +207,7 @@ async def syncpay_webhook(request: Request) -> Response:
     payment_status = data.get("status")
     print(f"[Webhook SyncPay] 🔔 UserID: {user_id} | Status: {payment_status}")
     
-    if payment_status == "completed":
+    if payment_status in ["completed", "PAID_OUT", "APPROVED", "paid", "SETTLED"]:
         try:
             # Apaga a mensagem do QR Code antigo se existir
             try:
