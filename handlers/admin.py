@@ -125,71 +125,81 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =================================================================
 
 async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inicia o processo de transmissão (Apenas Admins)."""
     if update.effective_user.id not in ADMIN_IDS: return
+    
     context.user_data['state'] = 'awaiting_broadcast_message'
-    await update.message.reply_text("📣 Envie a mensagem para transmissão ou /cancelar.")
+    await update.message.reply_text(
+        "📣 **Modo de Transmissão Ativado!**\n\n"
+        "Envie a mensagem que deseja transmitir para todos os usuários.\n"
+        "💡 *Dica:* Pode ser texto, foto com legenda, vídeo ou até GIF!\n\n"
+        "Envie a mensagem agora ou digite /cancelar."
+    )
 
-async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_text: str):
+async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int):
     """
-    Versão Híbrida: Estrutura robusta + Limpeza real de banco.
+    Versão Avançada: Usa copy_message (suporta fotos/vídeos), limpa o banco e envia mais rápido.
     """
     bot = context.bot
     admin_id = ADMIN_IDS[0]
     
-    # 1. Busca usuários ativos
     active_users = await db.get_active_users()
     if not active_users:
-        await bot.send_message(chat_id=admin_id, text="📣 Cancelado: Nenhum usuário ativo.")
+        await bot.send_message(chat_id=admin_id, text="📣 Cancelado: Nenhum usuário ativo encontrado.")
         return
 
-    await bot.send_message(chat_id=admin_id, text=f"🚀 Iniciando envio para {len(active_users)} usuários...")
+    await bot.send_message(chat_id=admin_id, text=f"🚀 Iniciando transmissão para {len(active_users)} usuários em background...")
     
     sucesso = 0
-    removidos = 0 # Mudamos o nome para ficar claro
+    removidos = 0
     falha_outros = 0
 
     for user in active_users:
         user_id = user['user_id']
         
         try:
-            await bot.send_message(chat_id=user_id, text=message_text, parse_mode="Markdown")
+            # COPY_MESSAGE é o segredo! Ele copia a mensagem exata (foto, texto, formatação) e envia.
+            await bot.copy_message(
+                chat_id=user_id, 
+                from_chat_id=from_chat_id, 
+                message_id=message_id
+            )
             sucesso += 1
             
-            # Delay: 6s é muito seguro, mas lento. 
-            # Se quiser mais rápido, mude para 3 ou 4.
-            await asyncio.sleep(4) 
+            # Delay otimizado para não tomar block do Telegram. 
+            # 0.1s permite enviar cerca de 10 mensagens por segundo (muito rápido e seguro).
+            await asyncio.sleep(0.1) 
 
         except Forbidden as e:
-            # 💀 O PULO DO GATO: Verificamos o erro, mas usamos DELETE
+            # Usuário bloqueou o bot ou excluiu a conta
             erro = str(e).lower()
             if "bot was blocked" in erro or "user is deactivated" in erro:
                 await db.delete_user(user_id) 
                 removidos += 1
             else:
-                # Se for um Forbidden estranho, apenas logamos
-                print(f"Forbidden desconhecido para {user_id}: {e}")
                 falha_outros += 1
 
         except RetryAfter as e:
-            print(f"⏳ FloodWait: Dormindo {e.retry_after}s...")
-            await asyncio.sleep(e.retry_after + 2)
+            # O Telegram pediu para ir mais devagar
+            print(f"⏳ FloodWait (Limite do Telegram): Pausando por {e.retry_after}s...")
+            await asyncio.sleep(e.retry_after + 1)
 
         except Exception as e:
-            print(f"❌ Erro genérico {user_id}: {e}")
+            print(f"❌ Erro genérico ao enviar para {user_id}: {e}")
             falha_outros += 1
     
     # Relatório Final
     relatorio = (
         f"📣 **Transmissão Finalizada!**\n\n"
-        f"✅ Entregues: {sucesso}\n"
-        f"🗑️ Removidos (Bloquearam): {removidos}\n" # Mostra quantos limpamos
-        f"❌ Falhas: {falha_outros}\n\n"
-        f"Base limpa: {len(active_users) - removidos} usuários restantes."
+        f"✅ Entregues com sucesso: {sucesso}\n"
+        f"🗑️ Usuários Removidos (Bloquearam o bot): {removidos}\n"
+        f"❌ Falhas desconhecidas: {falha_outros}\n\n"
+        f"📊 Base atualizada: {len(active_users) - removidos} usuários ativos."
     )
-    await bot.send_message(chat_id=admin_id, text=relatorio, parse_mode="Markdown")
+    await bot.send_message(chat_id=admin_id, text=relatorio)
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Captura texto para Broadcast e Pedidos."""
+    """Captura qualquer tipo de mensagem para Broadcast e Pedidos."""
     async with DB_SEMAPHORE:
         state = context.user_data.get('state')
         
@@ -198,14 +208,15 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             if update.effective_user.id not in ADMIN_IDS: return
             del context.user_data['state']
             
-            msg = update.message.text
-            await update.message.reply_text("🚀 Iniciando transmissão em background...")
-            # Precisamos importar a função real do arquivo onde ela estiver, 
-            # ou se estiver neste arquivo (como no seu código anterior), chama direto.
-            # Assumindo que iniciar_broadcast_real está neste arquivo:
-            asyncio.create_task(iniciar_broadcast_real(context, msg))
+            # Pegamos o ID da mensagem que o admin acabou de enviar e o ID do chat
+            message_id = update.message.message_id
+            from_chat_id = update.message.chat_id
+            
+            await update.message.reply_text("⚙️ Mensagem capturada! Preparando os motores...")
+            
+            # Chama a função passando a mensagem capturada (para copiar)
+            asyncio.create_task(iniciar_broadcast_real(context, message_id, from_chat_id))
 
-        # ROTA DE PEDIDOS TMDB (NOVA)
+        # ROTA DE PEDIDOS TMDB
         elif state == 'awaiting_tmdb_id':
-            # Delega a lógica para o arquivo pedidos.py
             await pedidos.process_tmdb_message(update, context)

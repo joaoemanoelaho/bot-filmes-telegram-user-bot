@@ -107,7 +107,7 @@ async def startup():
         application.add_handler(CommandHandler("showconfig", admin.show_config_command))
         application.add_handler(CommandHandler("pedidos", admin.pedidos_command_handler))
         application.add_handler(CommandHandler("transmissao", admin.broadcast_command_handler))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin.text_message_handler))
+        application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, admin.text_message_handler))
         application.add_handler(CallbackQueryHandler(admin.admin_callback, pattern="^adm_"))
 
         # 6. PEDIDOS
