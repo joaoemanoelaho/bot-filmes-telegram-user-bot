@@ -201,6 +201,10 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Captura qualquer tipo de mensagem para Broadcast e Pedidos."""
+
+    if update.message and update.message.chat.type != 'private':
+        return
+    
     async with DB_SEMAPHORE:
         state = context.user_data.get('state')
         

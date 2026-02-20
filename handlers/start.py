@@ -411,16 +411,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if is_query:
             try:
                 if message_to_reply.photo:
-                     await message_to_reply.edit_caption(caption=welcome_text, reply_markup=main_menu, parse_mode='HTML')
+                    # Fotos não geram preview de link, então não precisa adicionar aqui
+                    await message_to_reply.edit_caption(caption=welcome_text, reply_markup=main_menu, parse_mode='HTML')
                 else:
-                    await message_to_reply.edit_text(welcome_text, reply_markup=main_menu, parse_mode='HTML')
+                    await message_to_reply.edit_text(
+                        welcome_text, 
+                        reply_markup=main_menu, 
+                        parse_mode='HTML',
+                        disable_web_page_preview=True  # <--- ADICIONADO AQUI
+                    )
             except Exception:
-                await context.bot.send_message(chat_id=user.id, text=welcome_text, reply_markup=main_menu, parse_mode='HTML')
+                await context.bot.send_message(
+                    chat_id=user.id, 
+                    text=welcome_text, 
+                    reply_markup=main_menu, 
+                    parse_mode='HTML',
+                    disable_web_page_preview=True  # <--- ADICIONADO AQUI
+                )
                 if message_to_reply:
                     try: await message_to_reply.delete()
                     except: pass
         else:
-            await message_to_reply.reply_html(welcome_text, reply_markup=main_menu)
+            await message_to_reply.reply_html(
+                welcome_text, 
+                reply_markup=main_menu,
+                disable_web_page_preview=True  # <--- ADICIONADO AQUI
+            )
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if 'state' in context.user_data:

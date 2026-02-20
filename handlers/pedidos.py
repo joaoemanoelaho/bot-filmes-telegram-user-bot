@@ -37,25 +37,26 @@ async def request_start_callback(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data['state'] = 'awaiting_tmdb_id'
         
         texto_instrucao = (
-            "💡 **Faça seu Pedido**\n\n"
-            "Para evitar erros e duplicatas, aceitamos apenas o **Código TMDB**.\n\n"
-            "1️⃣ Vá no site [themoviedb.org](https://www.themoviedb.org/)\n"
-            "2️⃣ Copie o número da URL do filme/série.\n"
-            "3️⃣ **Envie APENAS esse número aqui.**\n\n"
-            "❌ _Não envie nomes, envie apenas números._\n"
+            "💡 <b>Faça seu Pedido</b>\n\n"
+            "Para garantir que vamos achar o conteúdo exato, precisamos do <b>Link Completo</b> do TMDB.\n\n"
+            "1️⃣ Vá no site <a href='https://www.themoviedb.org/'>themoviedb.org</a>\n"
+            "2️⃣ Pesquise o filme ou série desejada.\n"
+            "3️⃣ Copie o <b>link (URL) inteiro</b> da página e envie aqui.\n\n"
+            "✅ <i>Exemplo:</i> <code>https://www.themoviedb.org/tv/1413-american-horror-story</code>\n\n"
+            "❌ <i>Não envie o nome do filme, apenas o link!</i>\n"
             "Digite /cancelar para sair."
         )
         
-        await safe_call(query, "edit_message_text", text=texto_instrucao, parse_mode="Markdown", disable_web_page_preview=True)
+        await safe_call(query, "edit_message_text", text=texto_instrucao, parse_mode="HTML", disable_web_page_preview=True)
 
 async def request_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando /pedir."""
     context.user_data['state'] = 'awaiting_tmdb_id'
     await update.message.reply_text(
-        "Envie o **Código TMDB** (número) do conteúdo.\n"
-        "Ex: `550` (para Clube da Luta).\n\n"
+        "Envie o <b>Link Completo</b> do conteúdo no TMDB.\n\n"
+        "✅ <i>Exemplo:</i>\n<code>https://www.themoviedb.org/movie/550-fight-club</code>\n\n"
         "Digite /cancelar para sair."
-    , parse_mode="Markdown")
+    , parse_mode="HTML", disable_web_page_preview=True)
 
 async def process_tmdb_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lógica blindada de pedidos (Agora aceita Link e ID)."""
