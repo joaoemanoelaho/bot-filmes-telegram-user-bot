@@ -133,7 +133,8 @@ async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAUL
         "📣 **Modo de Transmissão Ativado!**\n\n"
         "Envie a mensagem que deseja transmitir para todos os usuários.\n"
         "💡 *Dica:* Pode ser texto, foto com legenda, vídeo ou até GIF!\n\n"
-        "Envie a mensagem agora ou digite /cancelar."
+        "Envie a mensagem agora ou digite /cancelar.",
+        parse_mode="Markdown"
     )
 
 async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int):

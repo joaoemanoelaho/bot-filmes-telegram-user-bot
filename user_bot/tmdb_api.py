@@ -10,45 +10,76 @@ tmdb.language = 'pt-BR'
 movie_search = Movie()
 tv_search = TV() # <--- INICIALIZA BUSCA DE SÉRIES
 
-async def check_tmdb_id(tmdb_id: str) -> dict | None:
+async def check_tmdb_id(tmdb_id: str, media_type: str = None) -> dict | None:
     """
-    Verifica se um ID existe no TMDB (primeiro tenta Filme, depois Série).
-    Retorna os dados formatados ou None.
+    Verifica se um ID existe no TMDB.
+    Se media_type for passado ('movie' ou 'tv'), busca diretamente na categoria correta.
+    Se não for passado, tenta adivinhar (primeiro Filme, depois Série).
     """
     try:
-        # Converter para int, se falhar não é ID válido
         t_id = int(tmdb_id)
         
-        # 1. Tenta buscar como FILME
-        try:
-            details = await asyncio.to_thread(movie_search.details, t_id)
-            if hasattr(details, 'title'):
-                return {
-                    "title": details.title,
-                    "year": details.release_date.split('-')[0] if hasattr(details, 'release_date') and details.release_date else "N/A",
-                    "type": "movie",
-                    "tmdb_id": t_id,
-                    "overview": getattr(details, 'overview', 'Sem sinopse.')
-                }
-        except Exception:
-            pass # Não é filme, continua para tentar série...
+        # --- SE O USUÁRIO MANDOU O LINK, NÓS JÁ SABEMOS O TIPO ---
+        if media_type == 'movie':
+            try:
+                details = await asyncio.to_thread(movie_search.details, t_id)
+                if hasattr(details, 'title'):
+                    return {
+                        "title": details.title,
+                        "year": details.release_date.split('-')[0] if hasattr(details, 'release_date') and details.release_date else "N/A",
+                        "type": "movie",
+                        "tmdb_id": t_id,
+                        "overview": getattr(details, 'overview', 'Sem sinopse.')
+                    }
+            except Exception:
+                return None # Se era pra ser filme e não achou, retorna erro.
 
-        # 2. Tenta buscar como SÉRIE
-        try:
-            details = await asyncio.to_thread(tv_search.details, t_id)
-            if hasattr(details, 'name'):
-                return {
-                    "title": details.name,
-                    "year": details.first_air_date.split('-')[0] if hasattr(details, 'first_air_date') and details.first_air_date else "N/A",
-                    "type": "tv",
-                    "tmdb_id": t_id,
-                    "overview": getattr(details, 'overview', 'Sem sinopse.')
-                }
-        except Exception:
-            pass # Não é série também
+        elif media_type == 'tv':
+            try:
+                details = await asyncio.to_thread(tv_search.details, t_id)
+                if hasattr(details, 'name'):
+                    return {
+                        "title": details.name,
+                        "year": details.first_air_date.split('-')[0] if hasattr(details, 'first_air_date') and details.first_air_date else "N/A",
+                        "type": "tv",
+                        "tmdb_id": t_id,
+                        "overview": getattr(details, 'overview', 'Sem sinopse.')
+                    }
+            except Exception:
+                return None # Se era pra ser série e não achou, retorna erro.
+
+        # --- SE O USUÁRIO MANDOU SÓ O NÚMERO (Modo Antigo de "Chute") ---
+        else:
+            # 1. Tenta buscar como FILME
+            try:
+                details = await asyncio.to_thread(movie_search.details, t_id)
+                if hasattr(details, 'title'):
+                    return {
+                        "title": details.title,
+                        "year": details.release_date.split('-')[0] if hasattr(details, 'release_date') and details.release_date else "N/A",
+                        "type": "movie",
+                        "tmdb_id": t_id,
+                        "overview": getattr(details, 'overview', 'Sem sinopse.')
+                    }
+            except Exception:
+                pass 
+
+            # 2. Tenta buscar como SÉRIE
+            try:
+                details = await asyncio.to_thread(tv_search.details, t_id)
+                if hasattr(details, 'name'):
+                    return {
+                        "title": details.name,
+                        "year": details.first_air_date.split('-')[0] if hasattr(details, 'first_air_date') and details.first_air_date else "N/A",
+                        "type": "tv",
+                        "tmdb_id": t_id,
+                        "overview": getattr(details, 'overview', 'Sem sinopse.')
+                    }
+            except Exception:
+                pass 
 
     except ValueError:
-        return None # Não enviou número
+        return None
     except Exception as e:
         print(f"Erro ao validar ID TMDB: {e}")
         return None
