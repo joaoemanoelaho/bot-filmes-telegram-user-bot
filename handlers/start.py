@@ -340,7 +340,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 return
             
-        elif payload.startswith("serie_"):
+            elif payload.startswith("serie_"):
                 # 1. Trava do FSub (Inscrição Obrigatória)
                 esta_inscrito = await verificar_inscricao(context.bot, user.id)
                 if not esta_inscrito:
