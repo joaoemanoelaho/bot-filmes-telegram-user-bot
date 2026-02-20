@@ -339,6 +339,73 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     reply_markup=InlineKeyboardMarkup(direct_keyboard)
                 )
                 return
+            
+        elif payload.startswith("serie_"):
+                # 1. Trava do FSub (Inscrição Obrigatória)
+                esta_inscrito = await verificar_inscricao(context.bot, user.id)
+                if not esta_inscrito:
+                    link_recarregar = f"https://t.me/{context.bot.username}?start={payload}"
+                    keyboard_fsub = [
+                        [InlineKeyboardButton("📢 Entrar no Canal", url=FSUB_CHANNEL_LINK)],
+                        [InlineKeyboardButton("💬 Entrar no Grupo", url=FSUB_GROUP_LINK)], 
+                        [InlineKeyboardButton("🔄 Já entrei! Tentar Novamente", url=link_recarregar)]
+                    ]
+                    await context.bot.send_message(
+                        chat_id=user.id, 
+                        text="🚫 *Acesso Restrito!*\nEntre nos canais para assistir.", 
+                        parse_mode="Markdown",
+                        reply_markup=InlineKeyboardMarkup(keyboard_fsub)
+                    )
+                    return
+                
+                # 2. Carregar e mostrar a Série
+                try:
+                    serie_id = int(payload.split('_')[1])
+                    status_msg = await context.bot.send_message(chat_id=user.id, text="⏳ Carregando sua série...")
+
+                    # Puxa os dados do DB (Igual você faz na busca inline)
+                    series = await db.get_series_by_id(serie_id)
+                    if not series:
+                        await status_msg.edit_text("❌ Série não encontrada no catálogo.")
+                        return
+
+                    seasons = await db.get_seasons_for_series(serie_id)
+                    
+                    poster = series.get('poster_url')
+                    if not poster: 
+                        poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                    
+                    # Legenda idêntica à que você já usa na busca!
+                    photo_caption = (
+                        f"📺 *{series.get('title', 'Série')}*\n\n"
+                        f"🗓️ *Ano:* {series.get('year', 'N/A')}\n"
+                        f"🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n"
+                        f"📝 *Sinopse:* {series.get('description', series.get('overview', 'N/A'))[:400]}...\n\n"
+                        f"---\nSelecione a temporada desejada abaixo:"
+                    )
+                    
+                    # Botões de Temporada (com a sua mágica do inline)
+                    keyboard = []
+                    if seasons:
+                        for season in seasons:
+                            keyboard.append([InlineKeyboardButton(f"▶️ Temporada {season['season_number']}", switch_inline_query_current_chat=f"season:{season['id']}:0")])
+                    
+                    keyboard.append([InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series.get('title', ''))])
+                    
+                    # Envia a foto com tudo pronto
+                    await context.bot.send_photo(
+                        chat_id=user.id,
+                        photo=poster,
+                        caption=photo_caption,
+                        parse_mode="Markdown",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                    await status_msg.delete()
+                    
+                except Exception as e:
+                    print(f"Erro na Rota de Série (start): {e}")
+                    await context.bot.send_message(chat_id=user.id, text="Erro ao processar a série.")
+                return
 
         # === MENU PRINCIPAL ===
         try:
