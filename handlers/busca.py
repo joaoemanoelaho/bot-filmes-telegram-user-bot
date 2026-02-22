@@ -55,7 +55,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
                             ep_title_bruto = episode.get('title', f"Episódio {ep_number}")
-                            ep_title_seguro = ep_title_bruto.replace("*", "").replace("_", " ")
+                            ep_title_seguro = html.escape(ep_title_bruto)
                             
                             # Tratamento de Pôster Blindado
                             poster = series.get('poster_url')
@@ -168,8 +168,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
                         for i, ep in enumerate(episodes):
                             ep_title_bruto = ep.get('title', f"Episódio {ep['episode_number']}")
-                            ep_title_limpo = ep_title_bruto.replace("*", "").replace("_", " ")
-                            ep_title_seguro = html.escape(ep_title_limpo)
+                            ep_title_seguro = html.escape(ep_title_bruto)
 
                             message_text = (
                                 f"📽️ *{series_title}*\n"
