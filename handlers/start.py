@@ -540,7 +540,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             keyboard.append([InlineKeyboardButton("Adquirir VIP 🚀", callback_data="main_vip")])
 
         keyboard.append([InlineKeyboardButton("🔖 Minha Lista", callback_data="fav_menu")])
-        keyboard.extend([[InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"), InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")]])
+
+        texto_convite = f"Ganhe +4 HORAS de VIP grátis!\nEnvie esse bot para seus amigos clicarem no link abaixo:\n\nhttps://t.me/{context.bot.username}?start=ref_{user.id}"
+
+        keyboard.extend([[InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"), InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")], [InlineKeyboardButton("🎁 Convidar Amigos (Ganhe VIP)", switch_inline_query=texto_convite)]])
 
         main_menu = InlineKeyboardMarkup(keyboard)
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
@@ -550,6 +553,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
             "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
             "Ficou com dúvidas? Envie o comando /help\n\n"
+            "_________________\n\n"
+            "🎁 <b>NOVIDADE:</b> Convide amigos e ganhe <b>+4 Horas VIP</b> por cada amigo que entrar!\n\n"
             "_________________\n\n"
             "Para liberar acesso ilimitado e alta velocidade, torne-se VIP!\n"
             "💎 <b>Clique em \"Adquirir VIP\" no menu abaixo!</b>\n\n"
