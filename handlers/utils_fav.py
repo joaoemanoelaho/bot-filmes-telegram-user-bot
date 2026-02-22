@@ -150,6 +150,32 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_call(query, "delete_message")
         status_msg = await context.bot.send_message(chat_id=user_id, text=f"🔄 Recuperando **{fav_item['title']}**...")
         
+        # =========================================================
+        # 🛡️ BLINDAGEM CONTRA DEAD LINKS (Atualizador Dinâmico)
+        # =========================================================
+        file_id_atualizado = None
+        
+        try:
+            parts = unique_code.split('_')
+            tipo = parts[0]      # 'movie' ou 'ep'
+            item_id = int(parts[1])
+            audio = parts[2] if len(parts) > 2 else 'dub'
+
+            if tipo == 'movie':
+                filme = await db.get_movie_by_id(item_id)
+                if filme:
+                    file_id_atualizado = filme.get(f"{'dubbed' if audio == 'dub' else 'subtitled'}_file_id")
+            elif tipo == 'ep':
+                ep = await db.get_episode_by_id(item_id)
+                if ep:
+                    file_id_atualizado = ep.get(f"{'dubbed' if audio == 'dub' else 'subtitled'}_file_id")
+        except Exception as e:
+            print(f"[FAV] Erro ao buscar ID atualizado: {e}")
+
+        # Se encontrou um ID novo no banco principal, usa ele! Se não, tenta o velho do favorito.
+        final_file_id = file_id_atualizado or fav_item['file_id']
+        # =========================================================
+
         # --- CONSTRUÇÃO DOS BOTÕES DE NAVEGAÇÃO ---
         base_keyboard = []
         
@@ -217,9 +243,9 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         caption_text = f"🍿 **{fav_item['title']}**\n\n🔖 Recuperado da Minha Lista.\n⚠️ *Apaga em 4 horas.*"
 
         try:
-            # PLANO A: File ID
+            # PLANO A: Usando o File ID blindado
             sent_message = await context.bot.send_video(
-                chat_id=user_id, video=fav_item['file_id'], caption=caption_text,
+                chat_id=user_id, video=final_file_id, caption=caption_text,
                 parse_mode="Markdown", reply_markup=video_markup, protect_content=True
             )
             job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
@@ -234,15 +260,16 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         chat_id=user_id, from_chat_id=fav_item['channel_id'], message_id=fav_item['message_id'], protect_content=True
                     )
                     await context.bot.edit_message_caption(
-                        chat_id=user.id, message_id=copied_message.message_id, caption=caption_text, parse_mode="Markdown", reply_markup=video_markup
+                        chat_id=user_id, message_id=copied_message.message_id, caption=caption_text, parse_mode="Markdown", reply_markup=video_markup
                     )
-                    job_data = {'chat_id': user.id, 'message_id': copied_message.message_id}
+                    job_data = {'chat_id': user_id, 'message_id': copied_message.message_id}
                     context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{copied_message.message_id}")
                 except Exception:
-                    await status_msg.edit_text("❌ Erro fatal: O arquivo original foi apagado.")
+                    await status_msg.edit_text("❌ Erro fatal: O arquivo original foi apagado e não foi substituído no Acervo. Remova dos favoritos!")
                     return
             else:
                 await status_msg.edit_text("❌ Erro ao enviar vídeo.")
                 return
 
         await status_msg.delete()
+        
