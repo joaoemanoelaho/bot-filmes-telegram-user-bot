@@ -105,6 +105,7 @@ async def startup():
         application.add_handler(CallbackQueryHandler(utils_fav.fav_watch_callback, pattern="^fav_watch_"))
 
         # 5. ADMIN
+        application.add_handler(CommandHandler("fakepay", admin.fake_pay_command))
         application.add_handler(CommandHandler("setconfig", admin.set_config_command))
         application.add_handler(CommandHandler("settext", admin.set_text_command))
         application.add_handler(CommandHandler("showconfig", admin.show_config_command))

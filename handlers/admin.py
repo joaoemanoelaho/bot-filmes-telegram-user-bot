@@ -225,3 +225,75 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # ROTA DE PEDIDOS TMDB
         elif state == 'awaiting_tmdb_id':
             await pedidos.process_tmdb_message(update, context)
+
+async def fake_pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando secreto para simular um pagamento e testar os pontos."""
+    user_id = update.effective_user.id
+    
+    # Só você (Admin) pode usar esse comando
+    if user_id not in ADMIN_IDS: 
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Uso correto: `/fakepay ID_DO_USUARIO`\nExemplo: `/fakepay 123456789`", parse_mode="Markdown")
+        return
+
+    await update.message.reply_text(f"⏳ Simulando o pagamento PIX para o usuário {target_user_id}...")
+
+    try:
+        # 1. Dá o VIP para o usuário alvo (O amigo)
+        config = await db.get_bot_config()
+        duration = config.get('vip_duration_days', 30)
+        await db.set_user_as_vip(target_user_id, duration_days=duration)
+        await db.clear_user_active_payment_id(target_user_id)
+        
+        # 2. A MÁGICA DOS PONTOS! (Puxa quem indicou ele)
+        user_info = await db.get_user_details(target_user_id)
+        referrer_id = user_info.get('referred_by') if user_info else None
+        
+        if referrer_id:
+            referrer_info = await db.get_user_details(referrer_id)
+            if referrer_info:
+                pontos_atuais = referrer_info.get('points', 0)
+                novos_pontos = pontos_atuais + 1
+                
+                if novos_pontos >= 5:
+                    # Bateu a meta
+                    await db.set_user_as_vip(referrer_id, duration_days=30)
+                    await asyncio.to_thread(db.supabase.table('users').update({'points': 0}).eq('user_id', referrer_id).execute)
+                    try:
+                        await context.bot.send_message(
+                            chat_id=referrer_id, 
+                            text="🎉 <b>VOCÊ BATEU 5 PONTOS!</b> 🏆\n\nUm amigo que você indicou acabou de assinar o VIP. Você ganhou <b>1 MÊS DE VIP TOTALMENTE GRÁTIS!</b> 🎁🚀", 
+                            parse_mode="HTML"
+                        )
+                    except: pass
+                else:
+                    # Só soma 1 ponto
+                    await asyncio.to_thread(db.supabase.table('users').update({'points': novos_pontos}).eq('user_id', referrer_id).execute)
+                    try:
+                        await context.bot.send_message(
+                            chat_id=referrer_id, 
+                            text=f"🪙 <b>VOCÊ GANHOU 1 PONTO!</b>\n\nUm amigo que você indicou (Simulação) assinou o VIP! Você agora tem <b>{novos_pontos}/5 pontos</b>. Junte 5 e ganhe 1 Mês Grátis! 🎁", 
+                            parse_mode="HTML"
+                        )
+                    except: pass
+            
+            await update.message.reply_text(f"✅ Pagamento simulado com sucesso!\nO Padrinho (`{referrer_id}`) recebeu a notificação e os pontos.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("✅ Pagamento simulado!\n⚠️ Mas atenção: Esse usuário NÃO tinha padrinho cadastrado. Ninguém ganhou pontos.")
+
+        # Avisa o "amigo" que o VIP dele caiu
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id, 
+                text="✅ **Pagamento Confirmado!** 🚀\n\nSeu acesso VIP foi liberado com sucesso. (Teste de Simulação) 🍿", 
+                parse_mode="Markdown"
+            )
+        except: pass
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao simular pagamento: {e}")
+        
