@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from telegram.error import NetworkError
 import asyncio
 import database as db
+import html
 from handlers.common import DB_SEMAPHORE, safe_call
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,7 +54,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             series_title = series.get('title', 'Série')
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
-                            ep_title = episode.get('title', f"Episódio {ep_number}")
+                            ep_title_bruto = episode.get('title', f"Episódio {ep_number}")
+                            ep_title_seguro = ep_title_bruto.replace("*", "").replace("_", " ")
                             
                             # Tratamento de Pôster Blindado
                             poster = series.get('poster_url')
@@ -165,11 +167,14 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
 
                         for i, ep in enumerate(episodes):
-                            ep_title = ep.get('title', f"Episódio {ep['episode_number']}")
+                            ep_title_bruto = ep.get('title', f"Episódio {ep['episode_number']}")
+                            ep_title_limpo = ep_title_bruto.replace("*", "").replace("_", " ")
+                            ep_title_seguro = html.escape(ep_title_limpo)
+
                             message_text = (
                                 f"📽️ *{series_title}*\n"
                                 f"🎬 *Temporada:* {season['season_number']}\n"
-                                f"🎯 *Episódio:* {ep['episode_number']} - {ep_title}\n"
+                                f"🎯 *Episódio:* {ep['episode_number']} - {ep_title_seguro}\n"
                                 f"--------------------\n"
                                 f"Selecione o áudio (o bot irá te chamar no privado):"
                             )
@@ -188,12 +193,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     InlineQueryResultArticle(
                                         id=f"ep_{ep['id']}",
                                         title=f"Episódio : {ep['episode_number']}",
-                                        description=f"🎬 {series_title} | {ep_title}",
+                                        description=f"🎬 {series_title} | {ep_title_seguro}",
                                         thumbnail_url=poster_url_pequeno,
                                         reply_markup=InlineKeyboardMarkup([audio_row]),
                                         input_message_content=InputTextMessageContent(
                                             message_text=message_text,
-                                            parse_mode="Markdown"
+                                            parse_mode="HTML"
                                         )
                                     )
                                 )
