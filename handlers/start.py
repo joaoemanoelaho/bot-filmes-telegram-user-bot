@@ -550,6 +550,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         keyboard.append([InlineKeyboardButton("🔖 Minha Lista", callback_data="fav_menu")])
 
+        user_dict = user_info[0] if isinstance(user_info, tuple) else user_info
+        meus_pontos = user_dict.get('points', 0) if user_dict else 0
+
         texto_convite = (
             "Ganhe +4 HORAS de VIP grátis!\n"
             "Envie esse bot para seus amigos clicarem no link abaixo:\n\n"
@@ -568,7 +571,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Clique no botão \"Buscar Mídia 🔎\" para começar.\n"
             "Ficou com dúvidas? Envie o comando /help\n"
             "_________________\n"
-            "🎁 <b>SISTEMA DE RECOMPENSAS:</b>\n"
+            "🎁 <b>SISTEMA DE RECOMPENSAS:</b>\n\n"
+            f"🏆 <b>SEUS PONTOS ATUAIS: {meus_pontos}/5</b>\n\n"
             "1️⃣ Convide um amigo e <b>ganhe +4 Horas VIP</b> na hora!\n"
             "2️⃣ Se o seu amigo assinar o VIP Mensal, você ganha <b>1 Ponto</b>.\n"
             "3️⃣ Junte <b>5 Pontos</b> e ganhe <b>1 MÊS VIP GRÁTIS!</b>\n"

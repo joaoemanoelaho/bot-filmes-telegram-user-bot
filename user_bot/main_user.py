@@ -229,6 +229,41 @@ async def syncpay_webhook(request: Request) -> Response:
                 await db.set_user_as_vip(user_id, duration_days=duration)
                 await db.clear_user_active_payment_id(user_id)
                 print(f"✅ VIP ATIVADO (SyncPay) para UserID: {user_id}")
+
+                try:
+                    user_info = await db.get_user_details(user_id)
+                    referrer_id = user_info.get('referred_by') if user_info else None
+                    
+                    if referrer_id:
+                        referrer_info = await db.get_user_details(referrer_id)
+                        if referrer_info:
+                            pontos_atuais = referrer_info.get('points', 0)
+                            novos_pontos = pontos_atuais + 1
+                            
+                            if novos_pontos >= 5:
+                                # BATEU 5 PONTOS! Dá 30 dias e zera os pontos
+                                await db.set_user_as_vip(referrer_id, duration_days=30)
+                                await asyncio.to_thread(db.supabase.table('users').update({'points': 0}).eq('user_id', referrer_id).execute)
+                                
+                                try:
+                                    await application.bot.send_message(
+                                        chat_id=referrer_id,
+                                        text="🎉 <b>VOCÊ BATEU 5 PONTOS!</b> 🏆\n\nUm amigo que você indicou acabou de assinar o VIP. Com isso você completou 5 pontos e ganhou <b>1 MÊS DE VIP TOTALMENTE GRÁTIS!</b> 🎁🚀",
+                                        parse_mode="HTML"
+                                    )
+                                except: pass
+                            else:
+                                # SÓ SOMA 1 PONTO
+                                await asyncio.to_thread(db.supabase.table('users').update({'points': novos_pontos}).eq('user_id', referrer_id).execute)
+                                try:
+                                    await application.bot.send_message(
+                                        chat_id=referrer_id,
+                                        text=f"🪙 <b>VOCÊ GANHOU 1 PONTO!</b>\n\nUm amigo que você indicou acabou de assinar o VIP! Você agora tem <b>{novos_pontos}/5 pontos</b>. Junte 5 e ganhe 1 Mês Grátis! 🎁",
+                                        parse_mode="HTML"
+                                    )
+                                except: pass
+                except Exception as e:
+                    print(f"Erro ao processar pontos do padrinho: {e}")
                 
                 # Manda mensagem de sucesso
                 try:
