@@ -175,7 +175,7 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
             # Usuário bloqueou o bot ou excluiu a conta
             erro = str(e).lower()
             if "bot was blocked" in erro or "user is deactivated" in erro:
-                await db.delete_user(user_id) 
+                await db.set_user_inactive(user_id) 
                 removidos += 1
             else:
                 falha_outros += 1

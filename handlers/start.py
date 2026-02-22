@@ -2,12 +2,46 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 import asyncio
+from datetime import datetime, timedelta
 import database as db
 from config import STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES, FSUB_GROUP_LINK, FSUB_CHANNEL_LINK, FSUB_CHANNEL_ID, FSUB_GROUP_ID
 from handlers.common import (
     DB_SEMAPHORE, safe_call, _get_vip_sales_message, 
     _get_episode_details_message, delete_message_job
 )
+
+async def adicionar_horas_vip(user_id: int, horas: int):
+    """Soma horas ao tempo VIP existente, ou cria um novo se não tiver."""
+    is_vip = await db.is_user_vip(user_id)
+    agora = datetime.utcnow()
+    
+    if is_vip:
+        # Se já é VIP, puxa a data atual e soma
+        try:
+            response = await asyncio.to_thread(
+                db.supabase.table('users').select('vip_until').eq('user_id', user_id).single().execute
+            )
+            if response.data and response.data.get('vip_until'):
+                data_atual = datetime.fromisoformat(response.data['vip_until'].replace('Z', '+00:00')).replace(tzinfo=None)
+                if data_atual > agora:
+                    nova_data = data_atual + timedelta(hours=horas)
+                else:
+                    nova_data = agora + timedelta(hours=horas)
+            else:
+                nova_data = agora + timedelta(hours=horas)
+        except:
+            nova_data = agora + timedelta(hours=horas)
+    else:
+        # Se não é VIP, soma a partir de agora
+        nova_data = agora + timedelta(hours=horas)
+    
+    # Atualiza o banco
+    await asyncio.to_thread(
+        db.supabase.table('users').update({
+            'is_vip': True,
+            'vip_until': nova_data.isoformat()
+        }).eq('user_id', user_id).execute
+    )
 
 async def verificar_inscricao(bot, user_id):
     status_aceitos = ['member', 'administrator', 'creator']
@@ -48,6 +82,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await message_to_reply.delete()
                 except Exception:
                     pass
+
+            # =========================================================
+            # ROTA 5: SISTEMA DE INDICAÇÃO (NOVO)
+            # =========================================================
+            if payload.startswith("ref_"):
+                try:
+                    referrer_id = int(payload.split('_')[1])
+                    
+                    if is_new_user and referrer_id != user.id:
+                        # 1. Salva quem indicou
+                        await asyncio.to_thread(
+                            db.supabase.table('users').update({'referred_by': referrer_id}).eq('user_id', user.id).execute
+                        )
+                        
+                        # 2. Dá 4 horas pro padrinho
+                        await adicionar_horas_vip(referrer_id, 4)
+                        
+                        # Avisa o padrinho
+                        try:
+                            await context.bot.send_message(
+                                chat_id=referrer_id, 
+                                text=f"🎉 **Indicação de Sucesso!**\n\nO usuário {user.first_name} entrou pelo seu link! Você acaba de ganhar **+4 HORAS** de VIP grátis! 🍿",
+                                parse_mode="Markdown"
+                            )
+                        except: pass
+                        
+                        # 3. Dá as 8 horas (4 trial + 4 bonus) pro novato!
+                        await adicionar_horas_vip(user.id, 8)
+                        
+                        trial_text = (
+                            f"🎉 <b>BEM-VINDO, {user.first_name}!</b>\n\n"
+                            f"🎁 Como você foi convidado por um amigo, você acaba de ganhar <b>8 HORAS DE VIP GRÁTIS!</b> (O dobro do normal!)\n\n"
+                            "✅ Filmes e Séries sem limites.\n"
+                            "✅ Alta velocidade.\n\n"
+                            "⏳ <i>Seu tempo já está contando... Corra para maratonar!</i>\n\n"
+                            "👇 <b>Clique abaixo para buscar seu filme:</b>"
+                        )
+                        await context.bot.send_message(
+                            chat_id=user.id, text=trial_text, parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔎 Buscar Filme Agora", switch_inline_query_current_chat="")]])
+                        )
+                        return # Encerra aqui pra não mandar o menu padrão junto
+                    
+                    elif not is_new_user:
+                        await context.bot.send_message(chat_id=user.id, text="ℹ️ Você já tem uma conta conosco! O link de convite é apenas para novos usuários.")
+                        # Continua pro menu normal abaixo...
+                        
+                except Exception as e:
+                    print(f"Erro no sistema de indicação: {e}")
 
             # ROTA 1: Assistir Episódio (watch_ep_)
             if payload.startswith("watch_ep_"):
