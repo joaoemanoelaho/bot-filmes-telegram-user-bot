@@ -541,7 +541,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         keyboard.append([InlineKeyboardButton("🔖 Minha Lista", callback_data="fav_menu")])
 
-        texto_convite = f"Ganhe +4 HORAS de VIP grátis!\nEnvie esse bot para seus amigos clicarem no link abaixo:\n\nhttps://t.me/{context.bot.username}?start=ref_{user.id}"
+        texto_convite = (
+            "Ganhe +4 HORAS de VIP grátis!\n"
+            "Envie esse bot para seus amigos clicarem no link abaixo:\n\n"
+            f"https://t.me/{context.bot.username}?start=ref_{user.id}\n\n"
+            "✨ Bônus: Se o seu amigo assinar o VIP, você ganha 1 Ponto. Junte 5 Pontos e troque por 1 MÊS GRÁTIS!"
+        )
 
         keyboard.extend([[InlineKeyboardButton("Pedir Filme/Série 💡", callback_data="main_request"), InlineKeyboardButton("Top Mídia 🏆", callback_data="main_top")], [InlineKeyboardButton("🎁 Convidar Amigos (Ganhe VIP)", switch_inline_query=texto_convite)]])
 
@@ -553,11 +558,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
             "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
             "Ficou com dúvidas? Envie o comando /help\n\n"
-            "_________________\n\n"
-            "🎁 <b>NOVIDADE:</b> Convide amigos e ganhe <b>+4 Horas VIP</b> por cada amigo que entrar!\n\n"
-            "_________________\n\n"
+            "_________________\n"
+            "🎁 <b>SISTEMA DE RECOMPENSAS:</b>\n"
+            "1️⃣ Convide um amigo e <b>ganhe +4 Horas VIP</b> na hora!\n"
+            "2️⃣ Se o seu amigo assinar o VIP Mensal, você ganha <b>1 Ponto</b>.\n"
+            "3️⃣ Junte <b>5 Pontos</b> e ganhe <b>1 MÊS VIP GRÁTIS!</b>\n"
+            "_________________\n"
             "Para liberar acesso ilimitado e alta velocidade, torne-se VIP!\n"
-            "💎 <b>Clique em \"Adquirir VIP\" no menu abaixo!</b>\n\n"
+            "💎 <b>Clique em \"Adquirir VIP\" no menu abaixo!</b>\n"
             "_________________\n\n"
             "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
             f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
