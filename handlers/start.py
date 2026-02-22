@@ -73,6 +73,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             user = update.effective_user
             message_to_reply = update.message
 
+        try:
+            user_info = await db.get_or_create_user(user_id=user.id, first_name=user.first_name)
+            if isinstance(user_info, tuple):
+                _, is_new_user = user_info
+            else:
+                is_new_user = False
+        except Exception:
+            is_new_user = False
+
         # === TRATAMENTO DE DEEP LINKS (start=...) ===
         if context.args:
             payload = context.args[0]
@@ -554,10 +563,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
         welcome_text = (
             f"Olá {user.mention_html()}! 👋\n\n"
-            "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b> 🍿\n\n"
-            "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n\n"
-            "Clique no botão \"Buscar Mídia 🔎\" para começar.\n\n"
-            "Ficou com dúvidas? Envie o comando /help\n\n"
+            "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b> 🍿\n"
+            "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n"
+            "Clique no botão \"Buscar Mídia 🔎\" para começar.\n"
+            "Ficou com dúvidas? Envie o comando /help\n"
             "_________________\n"
             "🎁 <b>SISTEMA DE RECOMPENSAS:</b>\n"
             "1️⃣ Convide um amigo e <b>ganhe +4 Horas VIP</b> na hora!\n"
