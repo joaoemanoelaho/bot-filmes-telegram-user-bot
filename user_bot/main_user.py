@@ -83,7 +83,7 @@ async def startup():
         print("🔵 Criando Application do Bot com Persistência...")
         application = Application.builder().token(BOT_TOKEN).request(request_motor).get_updates_request(request_motor).persistence(persistence).build()
 
-        application.add_handler(filtros_anti, group=-2)
+        application.add_handler(filtros_anti.filtro_handler, group=-2)
         
         # 1. START & MENU
         application.add_handler(CommandHandler("start", start.start))

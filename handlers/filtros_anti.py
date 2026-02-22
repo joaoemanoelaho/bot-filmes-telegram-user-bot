@@ -1,7 +1,7 @@
 import time
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
-from telegram.ext.exceptions import ApplicationHandlerStop
+from telegram.ext import ApplicationHandlerStop
 
 # ==========================================
 # ⚙️ CONFIGURAÇÕES DOS FILTROS
