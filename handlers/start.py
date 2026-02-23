@@ -552,6 +552,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         user_dict = user_info[0] if isinstance(user_info, tuple) else user_info
         meus_pontos = user_dict.get('points', 0) if user_dict else 0
+        custom_menu_text = config.get('main_menu_text')
 
         texto_convite = (
             "Ganhe +4 HORAS de VIP grátis!\n"
@@ -564,25 +565,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         main_menu = InlineKeyboardMarkup(keyboard)
         community_link = "https://t.me/+-v5nIbZ93J43MmQ5"
-        welcome_text = (
-            f"Olá {user.mention_html()}! 👋\n\n"
-            "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b> 🍿\n"
-            "Gosta de maratonar? Esse bot é perfeito para isso 😉.\n"
-            "Clique no botão \"Buscar Mídia 🔎\" para começar.\n"
-            "Ficou com dúvidas? Envie o comando /help\n"
-            "_________________\n"
-            "🎁 <b>SISTEMA DE RECOMPENSAS:</b>\n\n"
-            f"🏆 <b>SEUS PONTOS ATUAIS: {meus_pontos}/5</b>\n\n"
-            "1️⃣ Convide um amigo e <b>ganhe +4 Horas VIP</b> na hora!\n"
-            "2️⃣ Se o seu amigo assinar o VIP Mensal, você ganha <b>1 Ponto</b>.\n"
-            "3️⃣ Junte <b>5 Pontos</b> e ganhe <b>1 MÊS VIP GRÁTIS!</b>\n"
-            "_________________\n"
-            "Para liberar acesso ilimitado e alta velocidade, torne-se VIP!\n"
-            "💎 <b>Clique em \"Adquirir VIP\" no menu abaixo!</b>\n"
-            "_________________\n\n"
-            "Psst! 🤫 Quer debater sobre filmes, pedir séries, ou dar ideias para o bot?\n"
-            f"➡️ <a href=\"{community_link}\"><b>Junte-se à nossa comunidade!</b></a>"
-        )
+        if custom_menu_text:
+            # Se o admin configurou um texto, substitui as variáveis mágicas
+            welcome_text = custom_menu_text.replace('{USER_NAME}', user.mention_html()).replace('{POINTS}', str(meus_pontos)).replace('{COMMUNITY_LINK}', community_link)
+        else:
+            # Texto Padrão (Caso o banco esteja vazio ou seja a primeira vez)
+            welcome_text = (
+                f"Olá {user.mention_html()}! 👋\n\n"
+                "🍿 <b>O MELHOR BOT DE FILMES E SÉRIES!</b>\n"
+                "Clique em \"Buscar Mídia 🔎\" abaixo para começar.\n\n"
+                "_________________\n\n"
+                "🎁 <b>INDIQUE E GANHE:</b>\n"
+                f"🏆 <b>Seus Pontos: {meus_pontos}/5</b>\n\n"
+                "• Indique um amigo e <b>ganhe +4h VIP</b> na hora!\n"
+                "• Se ele assinar o VIP Mensal, você <b>ganha 1 Ponto</b>.\n"
+                "• Junte 5 Pontos e ganhe <b>1 MÊS GRÁTIS!</b>\n"
+                "_________________\n\n"
+                "💎 <b>Quer liberar tudo sem limites agora?</b>\n"
+                "Clique em \"Adquirir VIP\" no menu abaixo!\n\n"
+                f"💬 <a href=\"{community_link}\">Junte-se à nossa comunidade!</a>"
+            )
 
         if is_query:
             try:

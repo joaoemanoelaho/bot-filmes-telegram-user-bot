@@ -297,3 +297,20 @@ async def fake_pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao simular pagamento: {e}")
         
+async def set_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS: return
+
+    try:
+        menu_text = update.message.text.split(' ', 1)[1]
+        
+        await db.set_bot_config_value('main_menu_text', menu_text)
+        await update.message.reply_text(
+            f"✅ Texto do menu principal salvo com sucesso!\n\n"
+            f"💡 **Lembre-se das tags disponíveis:**\n"
+            f"`{{USER_NAME}}` - Mostra o nome do usuário\n"
+            f"`{{POINTS}}` - Mostra os pontos atuais (ex: 2)\n"
+            f"`{{COMMUNITY_LINK}}` - Mostra o link do grupo"
+        )
+    except IndexError:
+        await update.message.reply_text("❌ Erro: Envie o texto logo após o comando.\n\nExemplo:\n`/setmenu Olá {USER_NAME}! Você tem {POINTS} pontos.`", parse_mode="Markdown")

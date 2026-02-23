@@ -29,6 +29,7 @@ from handlers import (
     utils_fav,
     filtros_anti
 )
+from handlers.start import adicionar_horas_vip
 from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler
 # CERTIFIQUE-SE QUE ESTAS VARIÁVEIS ESTÃO NO SEU CONFIG.PY
 from config import BOT_TOKEN, PROXY_URL, WEBHOOK_DOMAIN, TELEGRAM_WEBHOOK_PATH, WEBHOOK_SECRET
@@ -105,6 +106,7 @@ async def startup():
         application.add_handler(CallbackQueryHandler(utils_fav.fav_watch_callback, pattern="^fav_watch_"))
 
         # 5. ADMIN
+        application.add_handler(CommandHandler("setmenu", admin.set_menu_command))
         application.add_handler(CommandHandler("fakepay", admin.fake_pay_command))
         application.add_handler(CommandHandler("setconfig", admin.set_config_command))
         application.add_handler(CommandHandler("settext", admin.set_text_command))
@@ -243,7 +245,7 @@ async def syncpay_webhook(request: Request) -> Response:
                             
                             if novos_pontos >= 5:
                                 # BATEU 5 PONTOS! Dá 30 dias e zera os pontos
-                                await db.set_user_as_vip(referrer_id, duration_days=30)
+                                await adicionar_horas_vip(referrer_id, 720)
                                 await asyncio.to_thread(db.supabase.table('users').update({'points': 0}).eq('user_id', referrer_id).execute)
                                 
                                 try:
