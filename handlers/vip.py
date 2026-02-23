@@ -88,8 +88,38 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 return
             
             elif status == "created":
-                await safe_call(query, "edit_message_text", text="⚠️ Você já possui uma cobrança PIX pendente.\n\nPor favor, realize o pagamento ou aguarde alguns minutos até que ela expire para gerar uma nova.")
-                return
+                # TENTA RECUPERAR O PIX VÁLIDO!
+                pix_data = await payments.get_pix_details(active_payment_id)
+                
+                if pix_data and pix_data.get("qr_code_text"):
+                    # Conseguimos recuperar! Vamos mostrar o PIX de novo.
+                    base64_string = pix_data['qr_code_base64']
+                    if ',' in base64_string:
+                        base64_string = base64_string.split(',')[1]
+                    qr_image_data = base64.b64decode(base64_string)
+                    qr_image_file = io.BytesIO(qr_image_data)
+                    pix_code = pix_data['qr_code_text']
+                    
+                    caption = (
+                        f"⚠️ **Você já tem um PIX gerado e ainda válido!**\n\n"
+                        f"<b>1.</b> Escaneie o QR Code acima.\n"
+                        f"<b>2.</b> Ou use o PIX Copia e Cola abaixo:\n"
+                        f"<code>{pix_code}</code>\n\n"
+                        "✅ Seu acesso Premium é <b>liberado automaticamente</b> na mesma hora."
+                    )
+                    
+                    await safe_call(query.message, "delete")
+                    msg_qrcode = await context.bot.send_photo(
+                        chat_id=user_id, photo=qr_image_file, caption=caption, parse_mode="HTML"
+                    )
+                    
+                    # Atualiza o ID da mensagem com o novo QR Code
+                    await db.set_user_active_payment_id(user_id, active_payment_id, msg_qrcode.message_id)
+                    return
+                else:
+                    # Se por algum motivo a SyncPay não devolver o código
+                    await safe_call(query, "edit_message_text", text="⚠️ Você possui uma cobrança pendente. Por favor, aguarde alguns minutos até que ela expire para gerar uma nova.")
+                    return
 
             elif status in ["expired", "canceled", "not_found"]:
                 await db.clear_user_active_payment_id(user_id)

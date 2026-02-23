@@ -149,6 +149,41 @@ class SyncPayAPI:
                     return None
             except Exception:
                 return None
+            
+    async def get_pix_details(self, payment_id):
+        """
+        NOVO: Recupera todos os dados do PIX (inclusive o Copia e Cola) se ele estiver pendente.
+        """
+        token = await self._get_auth_token()
+        if not token: return None
+
+        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/transaction/{payment_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        resp_json = await response.json()
+                        data = resp_json.get("data", {})
+                        
+                        status_raw = data.get("status")
+                        status = status_raw
+                        if status_raw == "completed": status = "paid"
+                        elif status_raw == "pending": status = "created"
+                        elif status_raw == "failed": status = "expired"
+
+                        pix_code = data.get("pix_code")
+                        qr_base64 = self._generate_qr_base64(pix_code) if pix_code else None
+
+                        return {
+                            "status": status,
+                            "qr_code_text": pix_code,
+                            "qr_code_base64": qr_base64
+                        }
+                    return None
+            except Exception:
+                return None
 
 # --- INSTÂNCIA E WRAPPERS ---
 # Isso garante que as funções chamadas no vip.py continuem funcionando igual
@@ -159,3 +194,6 @@ async def create_pix_payment(user_id: int, amount: float) -> dict | None:
 
 async def check_payment_status(payment_id: str) -> str | None:
     return await api.check_payment_status(payment_id)
+
+async def get_pix_details(payment_id: str) -> dict | None:
+    return await api.get_pix_details(payment_id)
