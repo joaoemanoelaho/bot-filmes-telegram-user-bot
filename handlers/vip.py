@@ -168,5 +168,91 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             
             qr_message_id = msg_qrcode.message_id
             await db.set_user_active_payment_id(user_id, payment_id, qr_message_id) 
+
+            # ==========================================
+            # 💣 INICIANDO AS BOMBAS RELÓGIO (FUNIL)
+            # ==========================================
+            job_data = {
+                'user_id': user_id, 
+                'payment_id': payment_id,
+                'pix_code': pix_code # Passamos o código pra mandar de novo nos 10 min
+            }
+            
+            # Agenda a mensagem de 5 minutos (300 segundos)
+            context.job_queue.run_once(reminder_5_min, when=300, data=job_data)
+            
+            # Agenda a mensagem de 10 minutos (600 segundos)
+            context.job_queue.run_once(reminder_10_min, when=600, data=job_data)
+            
+            # Agenda o cancelamento em 15 minutos (900 segundos)
+            context.job_queue.run_once(reminder_15_min_expired, when=900, data=job_data)
+            # ==========================================
         else:
             await safe_call(query, "edit_message_text", text="😕 Desculpe, não foi possível gerar a cobrança PIX. Tente novamente mais tarde.")
+
+# =================================================================
+# === MÁQUINA DE VENDAS: RECUPERAÇÃO DE CARRINHO ABANDONADO ===
+# =================================================================
+
+async def reminder_5_min(context: ContextTypes.DEFAULT_TYPE):
+    """Gatilho de Ajuda/Empatia."""
+    data = context.job.data
+    user_id = data['user_id']
+    payment_id = data['payment_id']
+
+    # 1. Checa se o cara já pagou ou gerou outro PIX
+    user_details = await db.get_user_details(user_id)
+    if not user_details or user_details.get('active_payment_id') != payment_id:
+        return # Desarma a bomba! Ele já pagou.
+
+    text = (
+        "👀 <b>Opa! Vi que você gerou o PIX, mas ainda não caiu aqui...</b>\n\n"
+        "Aconteceu algum erro no aplicativo do seu banco? 🤔\n"
+        "Seu código PIX ainda está válido na mensagem logo acima.\n\n"
+        "🏃‍♂️ <i>Corre e garanta seu acesso antes que o código expire! A pipoca já está esfriando...</i> 🍿"
+    )
+    try: await context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+    except: pass
+
+async def reminder_10_min(context: ContextTypes.DEFAULT_TYPE):
+    """Gatilho de Urgência + Facilidade (Copia e Cola)."""
+    data = context.job.data
+    user_id = data['user_id']
+    payment_id = data['payment_id']
+    pix_code = data['pix_code'] 
+
+    user_details = await db.get_user_details(user_id)
+    if not user_details or user_details.get('active_payment_id') != payment_id:
+        return # Desarma a bomba! Ele já pagou.
+
+    text = (
+        "⚠️ <b>SEU PIX EXPIRA EM 5 MINUTOS!</b> ⚠️\n\n"
+        "Essa é sua última chance de travar o preço promocional e liberar todo o catálogo de Filmes e Séries em Alta Velocidade! 🚀\n\n"
+        "Para facilitar, copie o código abaixo e pague agora no seu banco:\n\n"
+        f"<code>{pix_code}</code>\n\n"
+        "<i>A liberação é automática em 5 segundos!</i>"
+    )
+    try: await context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+    except: pass
+
+async def reminder_15_min_expired(context: ContextTypes.DEFAULT_TYPE):
+    """Gatilho de Escassez e Fechamento Seguro."""
+    data = context.job.data
+    user_id = data['user_id']
+    payment_id = data['payment_id']
+
+    user_details = await db.get_user_details(user_id)
+    if not user_details or user_details.get('active_payment_id') != payment_id:
+        return
+
+    # Limpa o banco de dados, pois o PIX expirou
+    await db.clear_user_active_payment_id(user_id)
+
+    text = (
+        "❌ <b>Seu código PIX expirou!</b>\n\n"
+        "A cobrança foi cancelada com total segurança e não é mais válida. 🔒\n\n"
+        "Quando você estiver pronto para maratonar sem limites, basta voltar ao menu /start e clicar em Adquirir VIP para gerar um novo.\n\n"
+        "Estaremos te esperando! 🍿🎬"
+    )
+    try: await context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+    except: pass
