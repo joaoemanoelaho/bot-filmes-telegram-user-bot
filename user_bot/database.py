@@ -19,7 +19,7 @@ _bot_config_cache = None
 _config_cache_time = 0
 
 VIP_CACHE = {}
-CACHE_TTL = 300
+CACHE_TTL = 300 
 
 # Tenta criar a conexão com o Supabase.
 try:

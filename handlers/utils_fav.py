@@ -134,7 +134,7 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 
                 # Edita a mensagem para mostrar o aviso de VIP
                 await safe_call(query, "edit_message_text", 
-                    text=f"🔒 **Conteúdo Exclusivo VIP**\n\n{sales_text}", 
+                    text=f"🔒 <b>Conteúdo Exclusivo VIP<b>\n\n{sales_text}", 
                     parse_mode="HTML", 
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )

@@ -101,7 +101,7 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     pix_code = pix_data['qr_code_text']
                     
                     caption = (
-                        f"⚠️ **Você já tem um PIX gerado e ainda válido!**\n\n"
+                        f"⚠️ <b>Você já tem um PIX gerado e ainda válido!</b>\n\n"
                         f"<b>1.</b> Escaneie o QR Code acima.\n"
                         f"<b>2.</b> Ou use o PIX Copia e Cola abaixo:\n"
                         f"<code>{pix_code}</code>\n\n"
@@ -155,7 +155,7 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>2.</b> Ou use o PIX Copia e Cola abaixo:\n"
                 f"<code>{pix_code}</code>\n\n"              
                 "✅ Seu acesso Premium é <b>liberado automaticamente</b> segundos após o pagamento.\n\n"
-                "⚠️ <b>ATENÇÃO: Este código expira em 5 minutos!</b>\n"
+                "⚠️ <b>ATENÇÃO: Este código expira em 15 minutos!</b>\n"
                 "Pague agora para travar o preço promocional."
             )
 

@@ -54,8 +54,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             series_title = series.get('title', 'Série')
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
-                            ep_title_bruto = episode.get('title', f"Episódio {ep_number}")
-                            ep_title_seguro = html.escape(ep_title_bruto)
+                            
+                            # 🛡️ CORREÇÃO DO ERRO AQUI:
+                            ep_title = episode.get('title')
+                            if not ep_title:
+                                ep_title = f"Episódio {ep_number}"
+                                
+                            ep_title_seguro = html.escape(ep_title)
                             
                             # Tratamento de Pôster Blindado
                             poster = series.get('poster_url')
@@ -68,9 +73,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             desc_text = f"S{int(season_number):02d}E{int(ep_number):02d} - {ep_title}"
                             
                             photo_caption = (
-                                f"📽️ *{series_title}*\n"
-                                f"🎬 *Temporada:* {season_number}\n"
-                                f"🎯 *Episódio:* {ep_number}"
+                                f"📽️ <b>{series_title}<b>\n"
+                                f"🎬 <b>Temporada:<b> {season_number}\n"
+                                f"🎯 <b>Episódio:<b> {ep_number}"
                             )
                             
                             watch_url = f"https://t.me/{bot_username}?start=show_ep_{episode_id}"
@@ -86,7 +91,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     photo_url=poster_url_grande,
                                     thumbnail_url=poster_url_pequeno,
                                     caption=photo_caption,
-                                    parse_mode="Markdown",
+                                    parse_mode="HTML",
                                     reply_markup=reply_markup
                                 )
                             )
@@ -171,9 +176,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             ep_title_seguro = html.escape(ep_title_bruto)
 
                             message_text = (
-                                f"📽️ *{series_title}*\n"
-                                f"🎬 *Temporada:* {season['season_number']}\n"
-                                f"🎯 *Episódio:* {ep['episode_number']} - {ep_title_seguro}\n"
+                                f"📽️ <b>{series_title}</b>\n"
+                                f"🎬 <b>Temporada:</b> {season['season_number']}\n"
+                                f"🎯 <b>Episódio:</b> {ep['episode_number']} - {ep_title_seguro}\n"
                                 f"--------------------\n"
                                 f"Selecione o áudio (o bot irá te chamar no privado):"
                             )
