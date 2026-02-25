@@ -51,16 +51,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             )
 
                             # 2. PREPARA OS DADOS DO EPISÓDIO
-                            series_title = series.get('title', 'Série')
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
-                            
-                            # 🛡️ CORREÇÃO DO ERRO AQUI:
-                            ep_title = episode.get('title')
-                            if not ep_title:
-                                ep_title = f"Episódio {ep_number}"
-                                
-                            ep_title_seguro = html.escape(ep_title)
+                            ep_title_bruto = episode.get('title', f"Episódio {ep_number}")
+                            ep_title_seguro = html.escape(ep_title_bruto)
                             
                             # Tratamento de Pôster Blindado
                             poster = series.get('poster_url')
@@ -70,7 +64,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             poster_url_grande = poster
                             poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
                             
-                            desc_text = f"S{int(season_number):02d}E{int(ep_number):02d} - {ep_title}"
+                            desc_text = f"S{int(season_number):02d}E{int(ep_number):02d} - {ep_title_seguro}"
+                            
+                            photo_caption = (
+                                f"📽️ *{series_title}*\n"
+                                f"🎬 *Temporada:* {season_number}\n"
+                                f"🎯 *Episódio:* {ep_number}"
+                            )
                             
                             photo_caption = (
                                 f"📽️ <b>{series_title}<b>\n"
