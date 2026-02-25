@@ -73,9 +73,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             )
                             
                             photo_caption = (
-                                f"📽️ <b>{series_title}<b>\n"
-                                f"🎬 <b>Temporada:<b> {season_number}\n"
-                                f"🎯 <b>Episódio:<b> {ep_number}"
+                                f"📽️ <b>{series_title}</b>\n"
+                                f"🎬 <b>Temporada:</b> {season_number}\n"
+                                f"🎯 <b>Episódio:</b> {ep_number}"
                             )
                             
                             watch_url = f"https://t.me/{bot_username}?start=show_ep_{episode_id}"
