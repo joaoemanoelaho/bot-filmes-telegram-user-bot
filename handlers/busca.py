@@ -51,6 +51,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             )
 
                             # 2. PREPARA OS DADOS DO EPISÓDIO
+                            series_title = series.get('title', 'Série Desconhecida')
                             ep_number = episode.get('episode_number', 0)
                             season_number = season.get('season_number', 0)
                             ep_title_bruto = episode.get('title', f"Episódio {ep_number}")
