@@ -312,7 +312,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 data=job_data,
                                 name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
                             )
-                            await db.log_movie_view(user_id=user.id, series_id=series_id_for_related)
                         except BadRequest as e:
                             # Plano B: Copiar (se falhar o file_id)
                             # Aqui assumimos que você tem as constantes STORAGE_CHANNEL_ID_SERIES no config.py
@@ -347,6 +346,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                              await status_msg.edit_text(f"😔 Erro geral: {e}")
 
                         await status_msg.delete()
+                        await db.log_movie_view(user_id=user.id, series_id=series_id_for_related)
                     else:
                         await status_msg.edit_text("😔 Desculpe, esta versão do áudio não está disponível.")
                 except Exception as e:
