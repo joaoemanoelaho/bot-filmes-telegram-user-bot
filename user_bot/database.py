@@ -941,3 +941,32 @@ async def get_mixed_recommendations(genre: str, limit: int = 5) -> list[dict]:
     except Exception as e:
         print(f"Erro ao buscar recomendações mistas: {e}")
         return []
+    
+async def buscar_usuarios_vencendo_em(dias: int):
+    """
+    Busca usuários cujo 'vip_until' expira em exatamente X dias.
+    """
+    try:
+        # Pega a data e hora atual em UTC (já que o banco usa timestamptz)
+        hoje = datetime.now(timezone.utc)
+        
+        # Calcula a janela de 24 horas para o dia alvo
+        data_alvo_inicio = hoje + timedelta(days=dias)
+        data_alvo_fim = data_alvo_inicio + timedelta(days=1)
+        
+        str_inicio = data_alvo_inicio.isoformat()
+        str_fim = data_alvo_fim.isoformat()
+
+        # Vai no Supabase e pega quem é VIP e vence nessa janela de tempo
+        resposta = await asyncio.to_thread(
+            supabase.table("users").select("user_id, vip_until, first_name")
+            .eq("is_vip", True)
+            .gte("vip_until", str_inicio)
+            .lt("vip_until", str_fim)
+            .execute
+        )
+        return resposta.data
+        
+    except Exception as e:
+        print(f"❌ Erro ao buscar vencimentos de {dias} dias: {e}")
+        return []

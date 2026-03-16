@@ -15,6 +15,7 @@ import aiohttp
 from aiohttp_socks import ProxyConnector
 from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 import handlers_user as handlers
 import database as db
@@ -61,6 +62,64 @@ async def error_handler(update: object, context):
     print(f"❌ Erro não-rede no handler: {e}")
     import traceback
     traceback.print_exc()
+
+# ==========================================================
+# ⏰ CRON JOB: LEMBRETE DE VENCIMENTO VIP
+# ==========================================================
+async def rotina_lembretes_vencimento(app: Application):
+    print("⏰ [CRON] Rotina de Lembretes de Vencimento iniciada!")
+    await asyncio.sleep(60) # Espera 1 minuto depois que o bot ligar para começar
+    
+    while True:
+        try:
+            dias_aviso = [3, 2, 1]
+            
+            for dias in dias_aviso:
+                usuarios = await db.buscar_usuarios_vencendo_em(dias)
+                
+                if usuarios:
+                    print(f"🔔 Disparando avisos para {len(usuarios)} usuários vencendo em {dias} dias.")
+                
+                for user in usuarios:
+                    user_id = user.get('user_id')
+                    nome = user.get('first_name', 'Amigo(a)')
+                    if not user_id: continue
+                    
+                    if dias == 1:
+                        alerta = "🚨 **SEU VIP ACABA AMANHÃ!** 🚨"
+                        texto_dias = "amanhã"
+                    else:
+                        alerta = f"⚠️ **Atenção, {nome}!**"
+                        texto_dias = f"em **{dias} dias**"
+
+                    mensagem = (
+                        f"{alerta}\n\n"
+                        f"Sua assinatura Pipoca Premium vai expirar {texto_dias}.\n\n"
+                        f"Não fique sem os seus filmes e séries favoritos! 🍿\n"
+                        f"Renove o seu plano agora mesmo para não perder o acesso."
+                    )
+                    
+                    # Botão mágico que já abre a aba de pagamento de PIX na mesma hora!
+                    keyboard = [[InlineKeyboardButton("💎 Renovar VIP Agora", callback_data="main_vip")]]
+                    
+                    try:
+                        await app.bot.send_message(
+                            chat_id=user_id, 
+                            text=mensagem,
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            parse_mode="Markdown"
+                        )
+                        print(f"   ✅ Aviso ({dias} dias) enviado para {user_id}")
+                    except Exception as e:
+                        print(f"   ❌ Erro ao enviar aviso para {user_id}: {e}")
+                        
+                    await asyncio.sleep(2) # Pausa de 2 segundos para evitar Flood no Telegram
+                    
+        except Exception as e:
+            print(f"❌ Erro geral na rotina de lembretes: {e}")
+            
+        # O bot dorme por 24 horas e verifica tudo de novo!
+        await asyncio.sleep(86400)
 
 # ==========================================================
 # 🚀 STARTUP DO BOT
@@ -132,6 +191,9 @@ async def startup():
         await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
 
         print("✅ Bot inicializado com sucesso.")
+
+        asyncio.create_task(rotina_lembretes_vencimento(application))
+        
         APP_INITIALIZED.set()
     except Exception as e:
         print(f"❌ ERRO CRÍTICO NO STARTUP: {e}")
