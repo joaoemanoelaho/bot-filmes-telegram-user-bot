@@ -72,7 +72,8 @@ async def rotina_lembretes_vencimento(app: Application):
     
     while True:
         try:
-            dias_aviso = [3, 2, 1]
+            # 👉 ADICIONAMOS O ZERO AQUI (Para quem vence nas próximas 24h)
+            dias_aviso = [3, 2, 1, 0] 
             
             for dias in dias_aviso:
                 usuarios = await db.buscar_usuarios_vencendo_em(dias)
@@ -85,8 +86,12 @@ async def rotina_lembretes_vencimento(app: Application):
                     nome = user.get('first_name', 'Amigo(a)')
                     if not user_id: continue
                     
-                    if dias == 1:
-                        alerta = "🚨 **SEU VIP ACABA AMANHÃ!** 🚨"
+                    # 🧠 Lógica inteligente para as palavras
+                    if dias == 0:
+                        alerta = "🚨 **SEU VIP ACABA HOJE!** 🚨"
+                        texto_dias = "nas próximas horas"
+                    elif dias == 1:
+                        alerta = "⏳ **SEU VIP ACABA AMANHÃ!** ⏳"
                         texto_dias = "amanhã"
                     else:
                         alerta = f"⚠️ **Atenção, {nome}!**"
