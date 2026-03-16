@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 import database as db
 import payments
 from handlers.common import DB_SEMAPHORE, safe_call, _get_vip_sales_message
+from handlers.start import adicionar_horas_vip
 
 async def vip_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback para o botão 'main_vip'."""
@@ -59,18 +60,11 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         config = await db.get_bot_config()
         price = config.get('vip_price', 4.99)
         duration_days = config.get('vip_duration_days', 7)
-
-        # Verificação de segurança
-        if await db.is_user_vip(user_id):
-            try:
-                await safe_call(query, "edit_message_text", text="✨ Você já é um membro Premium! Aproveite todo o catálogo do Cine Pipoca.")
-            except Exception: pass
-            return
         
         if price <= 0:
             # O admin mudou para 'gratis' enquanto o usuário olhava o menu
-            await db.set_user_as_vip(user_id, duration_days=duration_days if duration_days > 0 else 9999)
-            await safe_call(query, "edit_message_text", text="🎉 Boas notícias! O acesso agora é gratuito. Seu VIP foi ativado!")
+            await adicionar_horas_vip(user_id, duration_days * 24)
+            await safe_call(query, "edit_message_text", text="🎉 Boas notícias! O acesso agora é gratuito. Seu VIP foi ativado/renovado!")
             return
         
         # Lógica de verificação de pagamento pendente
@@ -82,7 +76,7 @@ async def confirm_pay_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             status = await payments.check_payment_status(active_payment_id)
 
             if status == "paid":
-                await db.set_user_as_vip(user_id, duration_days=duration_days) 
+                await adicionar_horas_vip(user_id, duration_days * 24)
                 await db.clear_user_active_payment_id(user_id)
                 await safe_call(query, "edit_message_text", text="🎉 Pagamento confirmado! Seu acesso Premium está ativo.")
                 return

@@ -64,15 +64,33 @@ async def error_handler(update: object, context):
     traceback.print_exc()
 
 # ==========================================================
-# ⏰ CRON JOB: LEMBRETE DE VENCIMENTO VIP
+# ⏰ CRON JOB: LEMBRETE DE VENCIMENTO VIP (11:00 BRT)
 # ==========================================================
-async def rotina_lembretes_vencimento(app: Application):
+async def rotina_lembretes_vencimento(app):
     print("⏰ [CRON] Rotina de Lembretes de Vencimento iniciada!")
-    await asyncio.sleep(60) # Espera 1 minuto depois que o bot ligar para começar
+    fuso_br = ZoneInfo('America/Sao_Paulo') # Define o horário exato do Brasil
     
     while True:
         try:
-            # 👉 ADICIONAMOS O ZERO AQUI (Para quem vence nas próximas 24h)
+            agora = datetime.now(fuso_br)
+            # Define o alvo: Hoje às 11:00:00 da manhã
+            alvo = agora.replace(hour=11, minute=0, second=0, microsecond=0)
+            
+            # Se hoje já passou das 11:00, ele agenda para as 11:00 de amanhã!
+            if agora >= alvo:
+                alvo += timedelta(days=1)
+            
+            # Calcula exatamente quantos segundos faltam até as 11:00
+            segundos_espera = (alvo - agora).total_seconds()
+            horas_espera = segundos_espera / 3600
+            print(f"⏰ [CRON] Lembretes VIP agendados para disparar em {horas_espera:.1f} horas (às 11:00 BRT).")
+            
+            # O bot "dorme" e só acorda nesse horário exato!
+            await asyncio.sleep(segundos_espera)
+            
+            # ======== ACORDOU! HORA DE COBRAR ========
+            print("🔔 [CRON] São 11:00! Disparando cobranças VIP...")
+            
             dias_aviso = [3, 2, 1, 0] 
             
             for dias in dias_aviso:
@@ -86,7 +104,6 @@ async def rotina_lembretes_vencimento(app: Application):
                     nome = user.get('first_name', 'Amigo(a)')
                     if not user_id: continue
                     
-                    # 🧠 Lógica inteligente para as palavras
                     if dias == 0:
                         alerta = "🚨 **SEU VIP ACABA HOJE!** 🚨"
                         texto_dias = "nas próximas horas"
@@ -105,6 +122,7 @@ async def rotina_lembretes_vencimento(app: Application):
                     )
                     
                     # Botão mágico que já abre a aba de pagamento de PIX na mesma hora!
+                    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
                     keyboard = [[InlineKeyboardButton("💎 Renovar VIP Agora", callback_data="main_vip")]]
                     
                     try:
@@ -122,10 +140,8 @@ async def rotina_lembretes_vencimento(app: Application):
                     
         except Exception as e:
             print(f"❌ Erro geral na rotina de lembretes: {e}")
+            await asyncio.sleep(60) # Se der algum erro, espera 1 minuto e tenta rodar de novo
             
-        # O bot dorme por 24 horas e verifica tudo de novo!
-        await asyncio.sleep(86400)
-
 # ==========================================================
 # 🚀 STARTUP DO BOT
 # ==========================================================
@@ -302,63 +318,61 @@ async def syncpay_webhook(request: Request) -> Response:
                     await application.bot.delete_message(chat_id=user_id, message_id=qr_msg_id)
             except Exception: pass
             
-            # ATIVA O VIP
-            if not await db.is_user_vip(user_id):
-                # Pega configuração de dias ou usa padrão 30
-                config = await db.get_bot_config()
-                duration = config.get('vip_duration_days', 30)
-                
-                await db.set_user_as_vip(user_id, duration_days=duration)
-                await db.clear_user_active_payment_id(user_id)
-                print(f"✅ VIP ATIVADO (SyncPay) para UserID: {user_id}")
+            # ====================================================
+            # 👉 ATIVA OU RENOVA O VIP (SOMANDO AS HORAS)
+            # ====================================================
+            config = await db.get_bot_config()
+            duration = config.get('vip_duration_days', 30)
+            
+            # Chama a função que soma o tempo (30 dias * 24 horas = 720 horas)
+            await adicionar_horas_vip(user_id, duration * 24)
+            await db.clear_user_active_payment_id(user_id)
+            print(f"✅ VIP ATIVADO/RENOVADO (SyncPay) para UserID: {user_id}")
 
-                try:
-                    user_info = await db.get_user_details(user_id)
-                    referrer_id = user_info.get('referred_by') if user_info else None
-                    
-                    if referrer_id:
-                        referrer_info = await db.get_user_details(referrer_id)
-                        if referrer_info:
-                            pontos_atuais = referrer_info.get('points', 0)
-                            novos_pontos = pontos_atuais + 1
+            try:
+                user_info = await db.get_user_details(user_id)
+                referrer_id = user_info.get('referred_by') if user_info else None
+                
+                if referrer_id:
+                    referrer_info = await db.get_user_details(referrer_id)
+                    if referrer_info:
+                        pontos_atuais = referrer_info.get('points', 0)
+                        novos_pontos = pontos_atuais + 1
+                        
+                        if novos_pontos >= 5:
+                            # BATEU 5 PONTOS! Dá 30 dias e zera os pontos
+                            await adicionar_horas_vip(referrer_id, 720)
+                            await asyncio.to_thread(db.supabase.table('users').update({'points': 0}).eq('user_id', referrer_id).execute)
                             
-                            if novos_pontos >= 5:
-                                # BATEU 5 PONTOS! Dá 30 dias e zera os pontos
-                                await adicionar_horas_vip(referrer_id, 720)
-                                await asyncio.to_thread(db.supabase.table('users').update({'points': 0}).eq('user_id', referrer_id).execute)
-                                
-                                try:
-                                    await application.bot.send_message(
-                                        chat_id=referrer_id,
-                                        text="🎉 <b>VOCÊ BATEU 5 PONTOS!</b> 🏆\n\nUm amigo que você indicou acabou de assinar o VIP. Com isso você completou 5 pontos e ganhou <b>1 MÊS DE VIP TOTALMENTE GRÁTIS!</b> 🎁🚀",
-                                        parse_mode="HTML"
-                                    )
-                                except: pass
-                            else:
-                                # SÓ SOMA 1 PONTO
-                                await asyncio.to_thread(db.supabase.table('users').update({'points': novos_pontos}).eq('user_id', referrer_id).execute)
-                                try:
-                                    await application.bot.send_message(
-                                        chat_id=referrer_id,
-                                        text=f"🪙 <b>VOCÊ GANHOU 1 PONTO!</b>\n\nUm amigo que você indicou acabou de assinar o VIP! Você agora tem <b>{novos_pontos}/5 pontos</b>. Junte 5 e ganhe 1 Mês Grátis! 🎁",
-                                        parse_mode="HTML"
-                                    )
-                                except: pass
-                except Exception as e:
-                    print(f"Erro ao processar pontos do padrinho: {e}")
-                
-                # Manda mensagem de sucesso
-                try:
-                    await application.bot.send_message(
-                        chat_id=user_id,
-                        text="✅ **Pagamento Confirmado!** 🚀\n\nSeu acesso VIP foi liberado com sucesso.\nObrigado por apoiar o Cine Pipoca! 🍿",
-                        parse_mode="Markdown"
-                    )
-                except Exception: pass
-            else:
-                print(f"ℹ️ UserID {user_id} já era VIP.")
-                await db.clear_user_active_payment_id(user_id)
-                
+                            try:
+                                await application.bot.send_message(
+                                    chat_id=referrer_id,
+                                    text="🎉 <b>VOCÊ BATEU 5 PONTOS!</b> 🏆\n\nUm amigo que você indicou acabou de assinar o VIP. Com isso você completou 5 pontos e ganhou <b>1 MÊS DE VIP TOTALMENTE GRÁTIS!</b> 🎁🚀",
+                                    parse_mode="HTML"
+                                )
+                            except: pass
+                        else:
+                            # SÓ SOMA 1 PONTO
+                            await asyncio.to_thread(db.supabase.table('users').update({'points': novos_pontos}).eq('user_id', referrer_id).execute)
+                            try:
+                                await application.bot.send_message(
+                                    chat_id=referrer_id,
+                                    text=f"🪙 <b>VOCÊ GANHOU 1 PONTO!</b>\n\nUm amigo que você indicou acabou de assinar o VIP! Você agora tem <b>{novos_pontos}/5 pontos</b>. Junte 5 e ganhe 1 Mês Grátis! 🎁",
+                                    parse_mode="HTML"
+                                )
+                            except: pass
+            except Exception as e:
+                print(f"Erro ao processar pontos do padrinho: {e}")
+            
+            # Manda mensagem de sucesso
+            try:
+                await application.bot.send_message(
+                    chat_id=user_id,
+                    text="✅ **Pagamento Confirmado!** 🚀\n\nSeu acesso VIP foi liberado ou estendido com sucesso.\nObrigado por apoiar o Cine Pipoca! 🍿",
+                    parse_mode="Markdown"
+                )
+            except Exception: pass
+            
         except Exception as e_db:
             print(f"❌ ERRO AO SALVAR VIP (SyncPay): {e_db}")
             return JSONResponse({"status": "error"}, status_code=500)
