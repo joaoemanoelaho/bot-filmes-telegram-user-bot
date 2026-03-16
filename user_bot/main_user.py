@@ -188,12 +188,24 @@ async def startup():
         
         webhook_url = f"{WEBHOOK_DOMAIN}{TELEGRAM_WEBHOOK_PATH}"
         print(f"ℹ️ Configurando webhook do Telegram para: {webhook_url}")
-        await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+        # 🛡️ SISTEMA BLINDADO: Tenta conectar ao Telegram até 5 vezes
+        for tentativa in range(5):
+            try:
+                # drop_pending_updates=True ajuda a limpar mensagens velhas presas
+                await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+                print("✅ Webhook do Telegram configurado com sucesso!")
+                break # Deu certo, sai do loop!
+            except Exception as e:
+                print(f"⚠️ Falha de rede ao conectar com Telegram (Tentativa {tentativa + 1}/5): {e}")
+                if tentativa == 4:
+                    print("💀 O Proxy ou a Rede caíram de vez. Desistindo...")
+                    raise # Se falhou 5 vezes, aí sim a gente desiste
+                await asyncio.sleep(3) # Espera 3 segundos antes de tentar de novo
 
         print("✅ Bot inicializado com sucesso.")
 
         asyncio.create_task(rotina_lembretes_vencimento(application))
-        
+
         APP_INITIALIZED.set()
     except Exception as e:
         print(f"❌ ERRO CRÍTICO NO STARTUP: {e}")
