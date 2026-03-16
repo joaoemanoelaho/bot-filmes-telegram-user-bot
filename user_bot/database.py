@@ -13,7 +13,7 @@ sys.path.insert(0, parent_dir)
 
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
-from datetime import datetime, timedelta # Para manipulação de datas
+from datetime import datetime, timedelta, timezone # Para manipulação de datas
 
 _bot_config_cache = None
 _config_cache_time = 0
