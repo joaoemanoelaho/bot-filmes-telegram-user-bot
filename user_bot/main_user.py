@@ -16,6 +16,7 @@ from aiohttp_socks import ProxyConnector
 from telegram.request import HTTPXRequest
 from telegram.error import NetworkError
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from zoneinfo import ZoneInfo
 
 import handlers_user as handlers
 import database as db
@@ -122,7 +123,6 @@ async def rotina_lembretes_vencimento(app):
                     )
                     
                     # Botão mágico que já abre a aba de pagamento de PIX na mesma hora!
-                    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
                     keyboard = [[InlineKeyboardButton("💎 Renovar VIP Agora", callback_data="main_vip")]]
                     
                     try:
@@ -141,7 +141,7 @@ async def rotina_lembretes_vencimento(app):
         except Exception as e:
             print(f"❌ Erro geral na rotina de lembretes: {e}")
             await asyncio.sleep(60) # Se der algum erro, espera 1 minuto e tenta rodar de novo
-            
+
 # ==========================================================
 # 🚀 STARTUP DO BOT
 # ==========================================================
