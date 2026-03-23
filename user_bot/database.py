@@ -253,19 +253,60 @@ async def add_request(user_id: int, title: str) -> bool:
         return False
     
 async def log_movie_view(user_id: int, movie_id: int = None, series_id: int = None):
-    """Registra visualização de Filme OU Série."""
+    """
+    Registra visualização de Filme OU Série de forma inteligente.
+    Impede que maratonas gerem dezenas de visualizações no mesmo dia,
+    nivelando Séries e Filmes no Top 10.
+    """
     if not supabase: return
     try:
         data = {'user_id': user_id}
+        
+        # Define qual ID estamos procurando para checar o anti-flood
+        coluna_id = ""
+        valor_id = 0
+        
         if movie_id:
             data['movie_id'] = movie_id
-        if series_id:
+            coluna_id = 'movie_id'
+            valor_id = movie_id
+        elif series_id:
             data['series_id'] = series_id
-            
+            coluna_id = 'series_id'
+            valor_id = series_id
+        else:
+            return # Se não mandou nenhum dos dois, aborta.
+
+        # --- SISTEMA ANTI-FLOOD / MARATONA (6 HORAS) ---
+        # Se o usuário tentar registrar o mesmo filme ou episódios da MESMA SÉRIE
+        # dentro de 6 horas, o banco ignora. Só conta o primeiro episódio que ele deu play.
+        
+        tempo_limite = datetime.utcnow() - timedelta(hours=6)
+        limite_str = tempo_limite.isoformat()
+
+        # Verifica se ele já assistiu isso recentemente
+        ja_assistiu_recente = await asyncio.to_thread(
+            supabase.table('view_history')
+            .select('id', count='exact')
+            .eq('user_id', user_id)
+            .eq(coluna_id, valor_id)
+            .gte('created_at', limite_str) # gte = Greater Than or Equal (Maior ou igual à data limite)
+            .execute
+        )
+        
+        count = ja_assistiu_recente.count if ja_assistiu_recente.count is not None else len(ja_assistiu_recente.data)
+        
+        if count > 0:
+            # print(f"🚫 View de {coluna_id} {valor_id} ignorada pelo Anti-Flood (Maratona).")
+            return # Já assistiu hoje, não conta mais pontos pro Top 10.
+        # -----------------------------------------------
+
+        # Se passou no Anti-Flood, registra a view normalmente
         await asyncio.to_thread(
             supabase.table('view_history').insert(data).execute
         )
-        # print(f"Visualização registrada para {data}")
+        # print(f"✅ Visualização registrada para {data}")
+        
     except Exception as e:
         print(f"Erro ao registrar view: {e}")
 
