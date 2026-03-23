@@ -970,3 +970,14 @@ async def buscar_usuarios_vencendo_em(dias: int):
     except Exception as e:
         print(f"❌ Erro ao buscar vencimentos de {dias} dias: {e}")
         return []
+
+def _limpar_cache_usuario(user_id: int):
+    """
+    Limpa a memória (cache) do usuário.
+    Força o bot a ir no banco de dados no próximo clique.
+    """
+    global VIP_CACHE
+    if user_id in VIP_CACHE:
+        del VIP_CACHE[user_id]
+        print(f"🧹 [Cache] Memória do usuário {user_id} limpa com sucesso!")
+        
