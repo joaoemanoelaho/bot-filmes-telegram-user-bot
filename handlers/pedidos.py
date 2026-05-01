@@ -131,7 +131,6 @@ async def process_tmdb_message(update: Update, context: ContextTypes.DEFAULT_TYP
             # Uma pequena pausa para o usuário ler a mensagem antes do bot processar as Etapas 4 e 5
             await asyncio.sleep(2.5)
 
-
     # [4] VERIFICAÇÃO DE PEDIDOS PENDENTES (Mantém igual)
     try:
         pending_requests = await db.get_pending_requests()
