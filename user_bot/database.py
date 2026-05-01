@@ -936,7 +936,7 @@ async def check_content_exists_by_tmdb_id(tmdb_id: int, media_type: str) -> dict
         # .limit(1) garante que a busca pare assim que encontrar o primeiro
         response = await asyncio.to_thread(
             supabase.table(table_name)
-            .select('title')
+            .select('title, is_complete')
             .eq('tmdb_id', tmdb_id)
             .execute
         )

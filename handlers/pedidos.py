@@ -4,6 +4,7 @@ from handlers.common import DB_SEMAPHORE, safe_call, _get_vip_sales_message
 import re
 import database as db
 import tmdb_api 
+import asyncio
 
 async def request_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback para o botão 'main_request'."""
@@ -105,15 +106,30 @@ async def process_tmdb_message(update: Update, context: ContextTypes.DEFAULT_TYP
     exists_in_catalog = await db.check_content_exists_by_tmdb_id(tmdb_data['tmdb_id'], tmdb_data['type'])
     
     if exists_in_catalog:
-        title_found = exists_in_catalog.get('title', tmdb_data['title'])
-        await msg_wait.edit_text(
-            f"✅ <b>Já temos esse conteúdo!</b> 🍿\n\n"
-            f"O título <b>'{title_found}'</b> já está disponível no catálogo.\n\n"
-            "🔎 <i>Use o botão de Busca no menu para assistir agora mesmo!</i>",
-            parse_mode="HTML"
-        )
-        if 'state' in context.user_data: del context.user_data['state']
-        return
+        # Verifica se o conteúdo está marcado como completo.
+        # Se a chave 'is_complete' não existir, assumimos 'True' por padrão para não quebrar os filmes antigos.
+        esta_completo = exists_in_catalog.get('is_complete', True)
+        
+        if esta_completo:
+            title_found = exists_in_catalog.get('title', tmdb_data['title'])
+            await msg_wait.edit_text(
+                f"✅ <b>Já temos esse conteúdo!</b> 🍿\n\n"
+                f"O título <b>'{title_found}'</b> já está 100% completo no catálogo.\n\n"
+                "🔎 <i>Use o botão de Busca no menu para assistir agora mesmo!</i>",
+                parse_mode="HTML"
+            )
+            if 'state' in context.user_data: del context.user_data['state']
+            return
+        else:
+            # Se NÃO estiver completo (is_complete = False), o bot avisa e CONTINUA o fluxo!
+            await msg_wait.edit_text(
+                f"⚠️ <b>Atualização Necessária!</b>\n\n"
+                f"O título <b>'{tmdb_data['title']}'</b> já está no catálogo, mas consta como <b>INCOMPLETO</b>.\n"
+                "🔄 Registrando seu pedido de atualização...",
+                parse_mode="HTML"
+            )
+            # Uma pequena pausa para o usuário ler a mensagem antes do bot processar as Etapas 4 e 5
+            await asyncio.sleep(2.5)
 
     # [4] VERIFICAÇÃO DE PEDIDOS PENDENTES (Mantém igual)
     try:
