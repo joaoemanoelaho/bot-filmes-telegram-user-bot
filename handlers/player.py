@@ -343,30 +343,39 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 5. SISTEMA DE NOTIFICAÇÃO (Sininho)
     elif callback_data.startswith("sub_toggle_"):
         async with DB_SEMAPHORE:
-            tmdb_id = int(callback_data.split('_')[2])
-            
-            # Chama a função que insere ou deleta no banco
-            ativou = await db.toggle_subscription(user_id, tmdb_id)
-            
-            if ativou:
-                await safe_call(query, "answer", text="🔔 Notificações Ativadas! Você será avisado quando sair episódio novo.", show_alert=True)
-            else:
-                await safe_call(query, "answer", text="🔕 Notificações Desativadas.", show_alert=True)
+            try:
+                tmdb_id = int(callback_data.split('_')[2])
                 
-            # Opcional: Atualizar o botão na mesma hora para o usuário ver que mudou
-            current_markup = query.message.reply_markup.inline_keyboard
-            new_markup = []
-            for row in current_markup:
-                new_row = []
-                for btn in row:
-                    if btn.callback_data == callback_data:
-                        novo_texto = "🔔 Avisar Novos Eps (Ativado)" if ativou else "🔕 Avisar Novos Eps"
-                        new_row.append(InlineKeyboardButton(novo_texto, callback_data=callback_data))
-                    else:
-                        new_row.append(btn)
-                new_markup.append(new_row)
+                # Chama a função que insere ou deleta no banco
+                ativou = await db.toggle_subscription(user_id, tmdb_id)
                 
-            await safe_call(query, "edit_message_reply_markup", reply_markup=InlineKeyboardMarkup(new_markup))
+                # O Aviso (Pop-up) vai aparecer não importa se é mensagem normal ou inline
+                if ativou:
+                    await safe_call(query, "answer", text="🔔 Notificações Ativadas! Você será avisado quando sair episódio novo.", show_alert=True)
+                else:
+                    await safe_call(query, "answer", text="🔕 Notificações Desativadas para esta série.", show_alert=True)
+                    
+                # 🛑 AQUI ESTÁ A CORREÇÃO: Verifica se a mensagem existe antes de tentar editar os botões
+                if query.message:
+                    current_markup = query.message.reply_markup.inline_keyboard
+                    new_markup = []
+                    for row in current_markup:
+                        new_row = []
+                        for btn in row:
+                            if btn.callback_data == callback_data:
+                                novo_texto = "🔔 Avisar Novos Eps (Ativado)" if ativou else "🔕 Avisar Novos Eps"
+                                new_row.append(InlineKeyboardButton(novo_texto, callback_data=callback_data))
+                            else:
+                                new_row.append(btn)
+                        new_markup.append(new_row)
+                        
+                    await safe_call(query, "edit_message_reply_markup", reply_markup=InlineKeyboardMarkup(new_markup))
+                
+                # Se não tem query.message (Busca Inline), o botão vai se atualizar 
+                # sozinho na próxima vez que o usuário digitar graças ao cache_time=0!
+            
+            except Exception as e:
+                print(f"Erro no sininho: {e}")
 
     elif callback_data.startswith("top_"):
         async with DB_SEMAPHORE:
