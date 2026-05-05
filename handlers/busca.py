@@ -289,10 +289,24 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     
                     seasons = await db.get_seasons_for_series(series['series_id'])
                     photo_caption = (f"📺 *{series['title']}*\n\n🗓️ *Ano:* {series['year']}\n🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n📝 *Sinopse:* {series.get('description', 'N/A')}\n\n---\nSelecione a temporada desejada abaixo:")
+                    
+                    # --- CÓDIGO NOVO DO SININHO AQUI ---
+                    tmdb_id_da_serie = series.get('tmdb_id')
+                    user_id = update.inline_query.from_user.id
+                    
+                    # Verifica a inscrição do usuário logado
+                    inscrito = await db.is_subscribed(user_id, tmdb_id_da_serie)
+                    texto_sino = "🔔 Avisar Novos Eps (Ativado)" if inscrito else "🔕 Avisar Novos Eps"
+                    callback_sino = f"sub_toggle_{tmdb_id_da_serie}"
+                    # -----------------------------------
+
                     keyboard = []
                     if seasons:
                         for season in seasons:
                             keyboard.append([InlineKeyboardButton(f"▶️ Temporada {season['season_number']}", switch_inline_query_current_chat=f"season:{season['id']}:0")])
+                    
+                    # Adiciona os botões finais na ordem certa
+                    keyboard.append([InlineKeyboardButton(texto_sino, callback_data=callback_sino)])
                     keyboard.append([InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])])
                     
                     results.append(
@@ -301,7 +315,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                             photo_url=poster, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
                         )
                     )
-                cache_time = 30
+                cache_time = 0
 
     except Exception as e:
         print(f"Erro ao processar lógica inline: {e}")
