@@ -476,12 +476,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         f"---\nSelecione a temporada desejada abaixo:"
                     )
                     
-                    # Botões de Temporada (com a sua mágica do inline)
+                    # --- CÓDIGO NOVO AQUI ---
+                    tmdb_id_da_serie = series.get('tmdb_id')
+                    
+                    # Verifica se o usuário já tem o sininho ativado
+                    # O "user.id" vem lá do começo do start.py
+                    inscrito = await db.is_subscribed(user.id, tmdb_id_da_serie)
+                    
+                    texto_sino = "🔔 Avisar Novos Eps (Ativado)" if inscrito else "🔕 Avisar Novos Eps"
+                    callback_sino = f"sub_toggle_{tmdb_id_da_serie}"
+
                     keyboard = []
                     if seasons:
                         for season in seasons:
                             keyboard.append([InlineKeyboardButton(f"▶️ Temporada {season['season_number']}", switch_inline_query_current_chat=f"season:{season['id']}:0")])
                     
+                    keyboard.append([InlineKeyboardButton(texto_sino, callback_data=callback_sino)])
                     keyboard.append([InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series.get('title', ''))])
                     
                     # Envia a foto com tudo pronto

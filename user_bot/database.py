@@ -1022,3 +1022,93 @@ def _limpar_cache_usuario(user_id: int):
         del VIP_CACHE[user_id]
         print(f"🧹 [Cache] Memória do usuário {user_id} limpa com sucesso!")
         
+async def obter_episodios_baixados(series_id):
+    """Retorna uma lista de tuplas (temporada, episodio) que já estão no banco."""
+    try:
+        # 1. Primeiro, acha todas as temporadas que pertencem a essa série
+        seasons_resp = await asyncio.to_thread(
+            supabase.table('seasons')
+            .select('id, season_number')
+            .eq('series_id', series_id)
+            .execute
+        )
+        
+        if not seasons_resp.data:
+            return []
+            
+        # Cria um "mapa" para saber qual ID pertence a qual número de temporada
+        season_map = {s['id']: s['season_number'] for s in seasons_resp.data}
+        season_ids = list(season_map.keys())
+        
+        # 2. Agora sim, busca os episódios que pertencem a essas temporadas
+        episodes_resp = await asyncio.to_thread(
+            supabase.table('episodes')
+            .select('season_id, episode_number')
+            .in_('season_id', season_ids)
+            .execute
+        )
+        
+        # 3. Junta as peças e devolve a lista de tuplas (temporada, episodio)
+        baixados = []
+        if episodes_resp.data:
+            for ep in episodes_resp.data:
+                temp_num = season_map.get(ep['season_id'])
+                ep_num = ep['episode_number']
+                if temp_num is not None and ep_num is not None:
+                    baixados.append((temp_num, ep_num))
+                    
+        return baixados
+    except Exception as e:
+        print(f"Erro ao obter episódios baixados: {e}")
+        return []
+    
+async def toggle_subscription(user_id: int, tmdb_id: int):
+    """Inscreve ou desinscreve o usuário das notificações de uma série."""
+    # Verifica se já está inscrito
+    resp = await asyncio.to_thread(
+        supabase.table('series_subscriptions')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('tmdb_id', tmdb_id)
+        .execute
+    )
+    
+    if resp.data:
+        # Se achou, deleta (Desinscreve)
+        await asyncio.to_thread(
+            supabase.table('series_subscriptions')
+            .delete()
+            .eq('user_id', user_id)
+            .eq('tmdb_id', tmdb_id)
+            .execute
+        )
+        return False # Retorna falso para sabermos que ele tirou a inscrição
+    else:
+        # Se não achou, insere (Inscreve)
+        await asyncio.to_thread(
+            supabase.table('series_subscriptions')
+            .insert({'user_id': user_id, 'tmdb_id': tmdb_id})
+            .execute
+        )
+        return True # Retorna verdadeiro para sabermos que ele ativou
+
+async def is_subscribed(user_id: int, tmdb_id: int):
+    """Verifica se o botão deve mostrar '🔔 Ativado' ou '🔕 Desativado'"""
+    resp = await asyncio.to_thread(
+        supabase.table('series_subscriptions')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('tmdb_id', tmdb_id)
+        .execute
+    )
+    return len(resp.data) > 0
+
+async def get_subscribers(tmdb_id: int):
+    """Puxa a lista de todo mundo para o Downloader mandar a mensagem"""
+    resp = await asyncio.to_thread(
+        supabase.table('series_subscriptions')
+        .select('user_id')
+        .eq('tmdb_id', tmdb_id)
+        .execute
+    )
+    return [row['user_id'] for row in resp.data] if resp.data else []

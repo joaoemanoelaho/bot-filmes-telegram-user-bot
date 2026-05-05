@@ -340,6 +340,34 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await safe_call(query, "edit_message_text", text="Selecione o período:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+    # 5. SISTEMA DE NOTIFICAÇÃO (Sininho)
+    elif callback_data.startswith("sub_toggle_"):
+        async with DB_SEMAPHORE:
+            tmdb_id = int(callback_data.split('_')[2])
+            
+            # Chama a função que insere ou deleta no banco
+            ativou = await db.toggle_subscription(user_id, tmdb_id)
+            
+            if ativou:
+                await safe_call(query, "answer", text="🔔 Notificações Ativadas! Você será avisado quando sair episódio novo.", show_alert=True)
+            else:
+                await safe_call(query, "answer", text="🔕 Notificações Desativadas.", show_alert=True)
+                
+            # Opcional: Atualizar o botão na mesma hora para o usuário ver que mudou
+            current_markup = query.message.reply_markup.inline_keyboard
+            new_markup = []
+            for row in current_markup:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == callback_data:
+                        novo_texto = "🔔 Avisar Novos Eps (Ativado)" if ativou else "🔕 Avisar Novos Eps"
+                        new_row.append(InlineKeyboardButton(novo_texto, callback_data=callback_data))
+                    else:
+                        new_row.append(btn)
+                new_markup.append(new_row)
+                
+            await safe_call(query, "edit_message_reply_markup", reply_markup=InlineKeyboardMarkup(new_markup))
+
     elif callback_data.startswith("top_"):
         async with DB_SEMAPHORE:
             await safe_call(query, "answer")
