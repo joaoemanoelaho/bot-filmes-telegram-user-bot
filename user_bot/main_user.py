@@ -179,7 +179,7 @@ async def startup():
 
         # 3. PLAYER & NAVEGAÇÃO
         application.add_handler(CommandHandler("watch", player.watch_command_handler))
-        application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_|main_top|top_)"))
+        application.add_handler(CallbackQueryHandler(player.player_callback, pattern="^(play_|ep_nav_|related_|show_card_|main_top|top_|sub_toggle_)"))
 
         # 4. FAVORITOS
         application.add_handler(CallbackQueryHandler(utils_fav.fav_menu_callback, pattern="^fav_menu$"))
