@@ -3,6 +3,8 @@ from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 from telegram.ext import ApplicationHandlerStop
 
+from config import ADMIN_IDS
+
 # ==========================================
 # ⚙️ CONFIGURAÇÕES DOS FILTROS
 # ==========================================
@@ -75,11 +77,18 @@ async def master_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 🔄 4. SISTEMA ANTI-ENCAMINHAMENTO (Impede correntes)
     # ==========================================
     if msg.forward_origin:
-        try:
-            await msg.delete()
-            await msg.reply_text(f"🚫 <b>{user.first_name}</b>, não aceitamos mensagens encaminhadas por aqui.", parse_mode="HTML")
-        except: pass
-        raise ApplicationHandlerStop()
+        eh_admin = user.id in ADMIN_IDS
+        esta_no_broadcast = context.user_data.get('state') == 'awaiting_broadcast_message'
+        
+        # O Passe Livre: Se for o ADMIN fazendo um BROADCAST, deixa passar!
+        if eh_admin and esta_no_broadcast:
+            pass 
+        else:
+            try:
+                await msg.delete()
+                await msg.reply_text(f"🚫 <b>{user.first_name}</b>, não aceitamos mensagens encaminhadas por aqui.", parse_mode="HTML")
+            except: pass
+            raise ApplicationHandlerStop()
 
     # ==========================================
     # 🤬 5. SISTEMA ANTI-SPAM TIGRINHO / PALAVRÕES
