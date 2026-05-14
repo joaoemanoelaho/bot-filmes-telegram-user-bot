@@ -121,58 +121,85 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_call(query, "edit_message_text", text="❌ Pedido não encontrado.")
 
 # =================================================================
-# === BROADCAST (TRANSMISSÃO) ===
+# === BROADCAST (TRANSMISSÃO SEGMENTADA) ===
 # =================================================================
 
 async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Inicia o processo de transmissão (Apenas Admins)."""
+    """Inicia o processo de transmissão segmentada (Apenas Admins)."""
     if update.effective_user.id not in ADMIN_IDS: return
     
-    context.user_data['state'] = 'awaiting_broadcast_message'
+    keyboard = [
+        [InlineKeyboardButton("📢 Todos os Usuários", callback_data="bc_all")],
+        [InlineKeyboardButton("💎 Apenas VIPs", callback_data="bc_vip")],
+        [InlineKeyboardButton("🆓 Apenas Gratuitos (Leads)", callback_data="bc_free")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancel")]
+    ]
+    
     await update.message.reply_text(
-        "📣 **Modo de Transmissão Ativado!**\n\n"
-        "Envie a mensagem que deseja transmitir para todos os usuários.\n"
-        "💡 *Dica:* Pode ser texto, foto com legenda, vídeo ou até GIF!\n\n"
-        "Envie a mensagem agora ou digite /cancelar.",
-        parse_mode="Markdown"
+        "🎯 **Painel de Transmissão Inteligente**\n\n"
+        "Escolha qual público deve receber a sua mensagem:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int):
+async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processa a escolha do público no painel de transmissão."""
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if user_id not in ADMIN_IDS: return
+    if not query.data.startswith("bc_"): return
+        
+    await safe_call(query, "answer")
+    
+    if query.data == "bc_cancel":
+        await safe_call(query, "edit_message_text", text="❌ Transmissão cancelada.")
+        return
+        
+    alvo = query.data.split('_')[1] # all, vip ou free
+    
+    context.user_data['broadcast_target'] = alvo
+    context.user_data['state'] = 'awaiting_broadcast_message'
+    
+    nomes = {"all": "Todos os Usuários", "vip": "Apenas VIPs", "free": "Apenas Gratuitos"}
+    
+    await safe_call(query, "edit_message_text", text=(
+        f"🎯 Público selecionado: **{nomes[alvo]}**\n\n"
+        f"⏳ Agora, **envie a mensagem** que você quer transmitir.\n"
+        f"💡 *Dica: Pode ser texto, foto com legenda, vídeo ou até encaminhar uma mensagem pronta!*"
+    ), parse_mode="Markdown")
+
+async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int, alvo: str):
     """
-    Versão Avançada: Usa copy_message (suporta fotos/vídeos), limpa o banco e envia mais rápido.
+    Usa copy_message, limpa o banco de quem bloqueou o bot e envia respeitando o Anti-Ban.
     """
     bot = context.bot
     admin_id = ADMIN_IDS[0]
     
-    active_users = await db.get_active_users()
-    if not active_users:
-        await bot.send_message(chat_id=admin_id, text="📣 Cancelado: Nenhum usuário ativo encontrado.")
+    # ⚠️ REQUER A FUNÇÃO obter_usuarios_broadcast LÁ NO SEU database.py!
+    active_users_ids = await db.obter_usuarios_broadcast(alvo)
+    
+    if not active_users_ids:
+        await bot.send_message(chat_id=admin_id, text=f"📣 Cancelado: Nenhum usuário encontrado para o filtro '{alvo}'.")
         return
 
-    await bot.send_message(chat_id=admin_id, text=f"🚀 Iniciando transmissão para {len(active_users)} usuários em background...")
+    await bot.send_message(chat_id=admin_id, text=f"🚀 Iniciando transmissão para {len(active_users_ids)} usuários em background...")
     
     sucesso = 0
     removidos = 0
     falha_outros = 0
 
-    for user in active_users:
-        user_id = user['user_id']
-        
+    for user_id in active_users_ids:
         try:
-            # COPY_MESSAGE é o segredo! Ele copia a mensagem exata (foto, texto, formatação) e envia.
             await bot.copy_message(
                 chat_id=user_id, 
                 from_chat_id=from_chat_id, 
                 message_id=message_id
             )
             sucesso += 1
-            
-            # Delay otimizado para não tomar block do Telegram. 
-            # 0.1s permite enviar cerca de 10 mensagens por segundo (muito rápido e seguro).
-            await asyncio.sleep(0.1) 
+            await asyncio.sleep(0.05) # Pausa de segurança anti-ban
 
         except Forbidden as e:
-            # Usuário bloqueou o bot ou excluiu a conta
             erro = str(e).lower()
             if "bot was blocked" in erro or "user is deactivated" in erro:
                 await db.set_user_inactive(user_id) 
@@ -181,7 +208,6 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
                 falha_outros += 1
 
         except RetryAfter as e:
-            # O Telegram pediu para ir mais devagar
             print(f"⏳ FloodWait (Limite do Telegram): Pausando por {e.retry_after}s...")
             await asyncio.sleep(e.retry_after + 1)
 
@@ -192,16 +218,15 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
     # Relatório Final
     relatorio = (
         f"📣 **Transmissão Finalizada!**\n\n"
+        f"🎯 Alvo: {alvo.upper()}\n"
         f"✅ Entregues com sucesso: {sucesso}\n"
         f"🗑️ Usuários Removidos (Bloquearam o bot): {removidos}\n"
-        f"❌ Falhas desconhecidas: {falha_outros}\n\n"
-        f"📊 Base atualizada: {len(active_users) - removidos} usuários ativos."
+        f"❌ Falhas desconhecidas: {falha_outros}\n"
     )
     await bot.send_message(chat_id=admin_id, text=relatorio)
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Captura qualquer tipo de mensagem para Broadcast e Pedidos."""
-
     if update.message and update.message.chat.type != 'private':
         return
     
@@ -211,16 +236,17 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # ROTA DE BROADCAST (ADMIN)
         if state == 'awaiting_broadcast_message':
             if update.effective_user.id not in ADMIN_IDS: return
+            
+            alvo = context.user_data.get('broadcast_target', 'all')
             del context.user_data['state']
             
-            # Pegamos o ID da mensagem que o admin acabou de enviar e o ID do chat
             message_id = update.message.message_id
             from_chat_id = update.message.chat_id
             
             await update.message.reply_text("⚙️ Mensagem capturada! Preparando os motores...")
             
-            # Chama a função passando a mensagem capturada (para copiar)
-            asyncio.create_task(iniciar_broadcast_real(context, message_id, from_chat_id))
+            # Passa o 'alvo' para a função saber para quem enviar
+            asyncio.create_task(iniciar_broadcast_real(context, message_id, from_chat_id, alvo))
 
         # ROTA DE PEDIDOS TMDB
         elif state == 'awaiting_tmdb_id':

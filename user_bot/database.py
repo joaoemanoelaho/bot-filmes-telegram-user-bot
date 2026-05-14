@@ -1112,3 +1112,23 @@ async def get_subscribers(tmdb_id: int):
         .execute
     )
     return [row['user_id'] for row in resp.data] if resp.data else []
+
+async def obter_usuarios_broadcast(alvo="all"):
+    """Busca usuários no Supabase filtrando por VIP, FREE ou TODOS."""
+    if not supabase: return []
+    try:
+        query = supabase.table('users').select('user_id')
+        
+        if alvo == "vip":
+            query = query.eq('is_vip', True)
+        elif alvo == "free":
+            query = query.eq('is_vip', False) # Ou is_vip is null dependendo do seu banco
+            
+        response = await asyncio.to_thread(query.execute)
+        
+        if response.data:
+            return [int(user['user_id']) for user in response.data]
+        return []
+    except Exception as e:
+        print(f"❌ Erro ao buscar usuários para broadcast: {e}")
+        return []
