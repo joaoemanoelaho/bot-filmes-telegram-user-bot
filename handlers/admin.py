@@ -132,6 +132,7 @@ async def broadcast_command_handler(update: Update, context: ContextTypes.DEFAUL
         [InlineKeyboardButton("📢 Todos os Usuários", callback_data="bc_all")],
         [InlineKeyboardButton("💎 Apenas VIPs", callback_data="bc_vip")],
         [InlineKeyboardButton("🆓 Apenas Gratuitos (Leads)", callback_data="bc_free")],
+        [InlineKeyboardButton("🧪 Testar (Apenas para Mim)", callback_data="bc_test")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancel")]
     ]
     
@@ -161,7 +162,7 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['broadcast_target'] = alvo
     context.user_data['state'] = 'awaiting_broadcast_message'
     
-    nomes = {"all": "Todos os Usuários", "vip": "Apenas VIPs", "free": "Apenas Gratuitos"}
+    nomes = {"all": "Todos os Usuários", "vip": "Apenas VIPs", "free": "Apenas Gratuitos", "test": "Teste (Apenas Admin)"}
     
     await safe_call(query, "edit_message_text", text=(
         f"🎯 Público selecionado: **{nomes[alvo]}**\n\n"
@@ -169,15 +170,18 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"💡 *Dica: Pode ser texto, foto com legenda, vídeo ou até encaminhar uma mensagem pronta!*"
     ), parse_mode="Markdown")
 
-async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int, alvo: str):
+async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id: int, from_chat_id: int, alvo: str, botoes=None):
     """
     Usa copy_message, limpa o banco de quem bloqueou o bot e envia respeitando o Anti-Ban.
     """
     bot = context.bot
     admin_id = ADMIN_IDS[0]
     
-    # ⚠️ REQUER A FUNÇÃO obter_usuarios_broadcast LÁ NO SEU database.py!
-    active_users_ids = await db.obter_usuarios_broadcast(alvo)
+    if alvo == "test":
+        active_users_ids = [admin_id] # Coloca apenas VOCÊ na lista de disparo
+    else:
+        # Só vai no banco se não for teste
+        active_users_ids = await db.obter_usuarios_broadcast(alvo)
     
     if not active_users_ids:
         await bot.send_message(chat_id=admin_id, text=f"📣 Cancelado: Nenhum usuário encontrado para o filtro '{alvo}'.")
@@ -194,7 +198,8 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
             await bot.copy_message(
                 chat_id=user_id, 
                 from_chat_id=from_chat_id, 
-                message_id=message_id
+                message_id=message_id,
+                reply_markup=botoes
             )
             sucesso += 1
             await asyncio.sleep(0.05) # Pausa de segurança anti-ban
@@ -242,6 +247,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
             message_id = update.message.message_id
             from_chat_id = update.message.chat_id
+            botoes = update.message.reply_markup
             
             await update.message.reply_text("⚙️ Mensagem capturada! Preparando os motores...")
             
