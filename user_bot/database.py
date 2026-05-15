@@ -1117,7 +1117,7 @@ async def obter_usuarios_broadcast(alvo="all"):
     """Busca usuários no Supabase filtrando por VIP, FREE ou TODOS."""
     if not supabase: return []
     try:
-        query = supabase.table('users').select('user_id')
+        query = supabase.table('users').select('user_id').eq('is_active', True)
         
         if alvo == "vip":
             query = query.eq('is_vip', True)
