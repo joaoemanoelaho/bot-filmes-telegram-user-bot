@@ -5,7 +5,7 @@ yt-dlp
 thefuzz
 python-Levenshtein
 uvicorn
-starlette
+starlette==0.27.0
 pyrogram 
 tgcrypto
 python-dotenv
