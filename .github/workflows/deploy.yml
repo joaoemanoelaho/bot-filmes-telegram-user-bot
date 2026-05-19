@@ -1,0 +1,25 @@
+name: Deploy do Bot na SquareCloud
+
+on:
+  push:
+    branches:
+      - user_bot # O gatilho: roda automaticamente sempre que você der um git push na branch user_bot
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Compactar arquivos (Zip)
+        # O pulo do gato: Zipa a pasta inteira, mas joga fora todo o lixo!
+        # Ele vai ignorar a pasta do git, os caches do Python e arquivos de ambiente locais.
+        run: zip -r project.zip . -x "*.git*" "*__pycache__*" "*.local*" ".env*"
+
+      - name: Deploy na Square Cloud
+        uses: squarecloudofc/github-action@v2
+        with:
+          # A mágica que envia o zip e reinicia o servidor automaticamente
+          command: commit --file project.zip ${{ secrets.SQUARECLOUD_APP_ID }} --restart
+          token: '${{ secrets.SQUARE_CLOUD_TOKEN }}'
