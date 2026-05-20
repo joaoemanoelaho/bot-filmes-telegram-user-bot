@@ -18,7 +18,6 @@ from telegram.error import NetworkError
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
-from handlers.worker_notificacoes import iniciar_worker_notificacoes
 
 import handlers_user as handlers
 import database as db
@@ -31,7 +30,8 @@ from handlers import (
     player, 
     busca, 
     utils_fav,
-    filtros_anti
+    filtros_anti,
+    worker_notificacoes
 )
 from handlers.start import adicionar_horas_vip
 from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler
@@ -229,7 +229,7 @@ async def startup():
         print("✅ Bot inicializado com sucesso.")
 
         asyncio.create_task(rotina_lembretes_vencimento(application))
-        asyncio.create_task(iniciar_worker_notificacoes(application.bot))
+        asyncio.create_task(worker_notificacoes.iniciar_worker_notificacoes(application.bot))
 
         APP_INITIALIZED.set()
     except Exception as e:
