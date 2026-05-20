@@ -290,7 +290,7 @@ async def log_movie_view(user_id: int, movie_id: int = None, series_id: int = No
             .select('view_id', count='exact')
             .eq('user_id', user_id)
             .eq(coluna_id, valor_id)
-            .gte('created_at', limite_str) # gte = Greater Than or Equal (Maior ou igual à data limite)
+            .gte('viewed_at', limite_str) # gte = Greater Than or Equal (Maior ou igual à data limite)
             .execute
         )
         
