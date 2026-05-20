@@ -33,6 +33,7 @@ from handlers import (
     filtros_anti,
     worker_notificacoes
 )
+
 from handlers.start import adicionar_horas_vip
 from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler
 # CERTIFIQUE-SE QUE ESTAS VARIÁVEIS ESTÃO NO SEU CONFIG.PY
