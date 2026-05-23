@@ -1,6 +1,7 @@
 import asyncio
 import time
 import database as db # Importação correta em formato de alias
+from pyrogram.errors import FloodWait
 
 async def iniciar_worker_notificacoes(app):
     """
@@ -50,21 +51,31 @@ async def iniciar_worker_notificacoes(app):
             inscritos = await db.get_subscribers(tmdb_id)
             
             if inscritos:
-                # Prepara a mensagem bonitona
                 mensagem_texto = f"🍿 **Nova atualização no catálogo!**\n\nO conteúdo **{nome_conteudo}** acabou de chegar! Acesse o bot para assistir agora mesmo. 🏃‍♂️💨"
                 
-                # Envia as mensagens respeitando o Anti-Flood
                 for uid in inscritos:
-                    try:
-                        await app.send_message(chat_id=uid, text=mensagem_texto)
-                        await asyncio.sleep(0.05) # 20 mensagens por segundo (Limite seguro do Telegram é 30)
-                    except Exception as e:
-                        # O que você já faz com maestria: Se o usuário bloqueou, limpa o banco!
-                        erro_str = str(e).lower()
-                        if "blocked" in erro_str or "deactivated" in erro_str:
-                            await db.set_user_inactive(uid) # Usando db.
-                        else:
-                            print(f"⚠️ Erro ao enviar para {uid}: {e}")
+                    # O LOOP DE RETENTATIVA DO CTO
+                    while True:
+                        try:
+                            await app.send_message(chat_id=uid, text=mensagem_texto)
+                            await asyncio.sleep(0.05) # Ritmo normal
+                            break # Deu certo, sai do while e vai pro próximo usuário
+                            
+                        except FloodWait as e:
+                            # 🚦 O Telegram pediu arrego! Pausando...
+                            tempo_espera = e.value
+                            print(f"🚦 [FloodWait] Telegram mandou esperar {tempo_espera}s. Pausando...")
+                            await asyncio.sleep(tempo_espera)
+                            # Não tem 'break' aqui! Ele volta pro topo do 'while' e tenta o mesmo usuário de novo!
+                            
+                        except Exception as e:
+                            # Erro fatal (usuário deletou a conta, bloqueou, etc)
+                            erro_str = str(e).lower()
+                            if "blocked" in erro_str or "deactivated" in erro_str:
+                                await db.set_user_inactive(uid)
+                            else:
+                                print(f"⚠️ Erro ao enviar para {uid}: {e}")
+                            break # Sai do while e desiste desse usuário
 
             # 4. CHECK-OUT: Finalizou o lote? Deleta da fila para poupar banco (ou marca como concluído)
             await asyncio.to_thread(
@@ -78,4 +89,3 @@ async def iniciar_worker_notificacoes(app):
         except Exception as e:
             print(f"❌ [Worker] Erro crítico no loop do Worker: {e}")
             await asyncio.sleep(10) # Evita loop infinito de erro travando a CPU
-            

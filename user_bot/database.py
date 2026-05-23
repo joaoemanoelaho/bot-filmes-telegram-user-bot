@@ -118,14 +118,8 @@ async def get_or_create_user(user_id: int, first_name: str) -> tuple[dict, bool]
             )
             
             if insert_response.data:
-                # Atualiza o Cache IMEDIATAMENTE para ele não ser bloqueado
-                current_time = time.time()
-                if 'VIP_CACHE' in globals():
-                    globals()['VIP_CACHE'][user_id] = {
-                        'status': True,
-                        'expires_at': current_time + (4 * 3600) # Cache de 4h
-                    }
-                
+                # ⚡ Atualiza a Memória RAM IMEDIATAMENTE com o Trial
+                VIP_CACHE[user_id] = trial_end.timestamp()
                 return insert_response.data[0], True # True indica que é NOVO
         except Exception as e:
             print(f"Erro ao inserir novo usuário trial: {e}")
@@ -323,7 +317,7 @@ async def get_trending(period_days: int = 0) -> list:
         return []
     
 async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:
-    """Atualiza o status de um usuário para VIP e JÁ ATUALIZA O CACHE."""
+    """Atualiza o status para VIP e INJETA NA MEMÓRIA RAM."""
     if not supabase:
         return False
     
@@ -338,12 +332,8 @@ async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:
             }).eq('user_id', user_id).execute
         )
         
-        # 2. Atualiza na Memória RAM (Cache) IMEDIATAMENTE 🚀
-        # Assim o usuário não precisa esperar o tempo do cache vencer!
-        VIP_CACHE[user_id] = {
-            'status': True,
-            'expires_at': time.time() + CACHE_TTL
-        }
+        # 2. ⚡ Atualiza na Memória RAM IMEDIATAMENTE
+        VIP_CACHE[user_id] = expiration_date.timestamp()
         return True
     except Exception as e:
         print(f"Erro ao atualizar usuário para VIP: {e}")
@@ -351,77 +341,26 @@ async def set_user_as_vip(user_id: int, duration_days: int = 30) -> bool:
     
 async def is_user_vip(user_id: int) -> bool:
     """
-    Verifica se o usuário é VIP com Cache para velocidade máxima.
-    Só consulta o banco de dados se o cache expirar ou não existir.
+    Verificação 100% em RAM (Tempo de resposta: Nanossegundos).
+    ZERO chamadas ao banco de dados!
     """
-    
-    # 1. VERIFICAÇÃO RÁPIDA (MEMÓRIA RAM) 🚀
-    current_time = time.time()
-    
     if user_id in VIP_CACHE:
-        cached_data = VIP_CACHE[user_id]
-        # Se o cache ainda é válido (não passou de 5 min), retorna o valor salvo
-        if current_time < cached_data['expires_at']:
-            return cached_data['status']
-
-    # 2. CONSULTA AO BANCO (LENTA - Só acontece a cada 5 min) 🐢
-    if not supabase:
-        return False
-
-    is_vip_result = False # Assume falso até provar o contrário
-
-    try:
-        # Busca no banco
-        response = await asyncio.to_thread(
-            supabase.table('users').select('is_vip, vip_until').eq('user_id', user_id).execute
-        )
-        
-        # Verifica se retornou dados
-        if response.data and len(response.data) > 0:
-            user_data = response.data[0]
-            
-            # Se no banco diz que é VIP, vamos conferir a data
-            if user_data.get('is_vip'):
-                vip_until_str = user_data.get('vip_until')
-                
-                if vip_until_str:
-                    # Converte string ISO para objeto de data
-                    vip_expiration_date = datetime.fromisoformat(vip_until_str.replace('Z', '+00:00'))
-                    now = datetime.now(vip_expiration_date.tzinfo)
-
-                    if now < vip_expiration_date:
-                        # ✅ É VIP e a data está válida
-                        is_vip_result = True
-                    else:
-                        # ❌ Expirou! Atualiza o banco para remover VIP
-                        print(f"📉 Assinatura de {user_id} expirou. Removendo...")
-                        asyncio.create_task(asyncio.to_thread(
-                            supabase.table('users').update({'is_vip': False, 'vip_until': None}).eq('user_id', user_id).execute
-                        ))
-                        is_vip_result = False
-                else:
-                    # É VIP mas não tem data?? Removemos por segurança (lógica original)
-                    if 'clear_user_active_payment_id' in globals():
-                        await clear_user_active_payment_id(user_id)
-                    is_vip_result = False
-            else:
-                is_vip_result = False
+        # Verifica se o Timestamp salvo na RAM ainda é maior que o momento atual
+        if time.time() < VIP_CACHE[user_id]:
+            return True
         else:
-            is_vip_result = False
-
-    except Exception as e:
-        print(f"⚠️ Erro ao verificar VIP no banco: {e}")
-        # Em caso de erro de conexão, se tivermos um cache antigo, usamos ele por segurança?
-        # Ou retornamos False. Vamos retornar False para evitar liberar acesso indevido.
-        is_vip_result = False
-
-    # 3. SALVA NO CACHE PARA A PRÓXIMA VEZ 💾
-    VIP_CACHE[user_id] = {
-        'status': is_vip_result,
-        'expires_at': current_time + CACHE_TTL
-    }
-
-    return is_vip_result
+            # ❌ Expirou agora! Remove da memória RAM
+            del VIP_CACHE[user_id]
+            print(f"📉 Assinatura de {user_id} expirou na memória. Atualizando banco em background...")
+            
+            # Atualiza o banco em segundo plano sem travar o usuário
+            asyncio.create_task(asyncio.to_thread(
+                supabase.table('users').update({'is_vip': False, 'vip_until': None}).eq('user_id', user_id).execute
+            ))
+            return False
+            
+    # Se não está na chave da memória, definitivamente não é VIP.
+    return False
 
 async def find_movie_by_title_and_year(title: str, year: int) -> dict | None:
     """Procura por um filme no banco de dados pelo título e ano."""
@@ -643,15 +582,19 @@ async def get_neighbor_episode(season_id, current_number, direction='next'):
         return None
     
 async def set_user_inactive(user_id: int):
-    """Marca um usuário como inativo (ex: bloqueou o bot)."""
-    if not supabase: 
-        return
+    """Marca um usuário como inativo e remove do cache VIP."""
+    if not supabase: return
     try:
         await asyncio.to_thread(
             supabase.table('users').update({'is_active': False})
             .eq('user_id', user_id).execute
         )
         print(f"Usuário {user_id} marcado como INATIVO.")
+        
+        # ⚡ Remove da Memória RAM instantaneamente
+        if user_id in VIP_CACHE:
+            del VIP_CACHE[user_id]
+            
     except Exception as e:
         print(f"Erro ao marcar usuário {user_id} como inativo: {e}")
 
@@ -1012,16 +955,6 @@ async def buscar_usuarios_vencendo_em(dias: int):
         print(f"❌ Erro ao buscar vencimentos de {dias} dias: {e}")
         return []
 
-def _limpar_cache_usuario(user_id: int):
-    """
-    Limpa a memória (cache) do usuário.
-    Força o bot a ir no banco de dados no próximo clique.
-    """
-    global VIP_CACHE
-    if user_id in VIP_CACHE:
-        del VIP_CACHE[user_id]
-        print(f"🧹 [Cache] Memória do usuário {user_id} limpa com sucesso!")
-        
 async def obter_episodios_baixados(series_id):
     """Retorna uma lista de tuplas (temporada, episodio) que já estão no banco."""
     try:
@@ -1104,14 +1037,34 @@ async def is_subscribed(user_id: int, tmdb_id: int):
     return len(resp.data) > 0
 
 async def get_subscribers(tmdb_id: int):
-    """Puxa a lista de todo mundo para o Downloader mandar a mensagem"""
-    resp = await asyncio.to_thread(
-        supabase.table('series_subscriptions')
-        .select('user_id')
-        .eq('tmdb_id', tmdb_id)
-        .execute
-    )
-    return [row['user_id'] for row in resp.data] if resp.data else []
+    """Puxa a lista de assinantes garantindo que NÃO estão inativos (Sem Fantasmas)"""
+    if not supabase: 
+        return []
+    try:
+        # 1. Puxa todos que assinaram a série
+        resp_subs = await asyncio.to_thread(
+            supabase.table('series_subscriptions')
+            .select('user_id')
+            .eq('tmdb_id', tmdb_id)
+            .execute
+        )
+        if not resp_subs.data: return []
+        
+        inscritos_brutos = [row['user_id'] for row in resp_subs.data]
+
+        # 2. Cruza com a tabela 'users' para trazer APENAS os que estão com is_active = True
+        resp_ativos = await asyncio.to_thread(
+            supabase.table('users')
+            .select('user_id')
+            .in_('user_id', inscritos_brutos)
+            .eq('is_active', True)
+            .execute
+        )
+        return [row['user_id'] for row in resp_ativos.data] if resp_ativos.data else []
+        
+    except Exception as e:
+        print(f"Erro ao buscar inscritos ativos para o sininho: {e}")
+        return []
 
 async def obter_usuarios_broadcast(alvo="all"):
     """Busca usuários no Supabase filtrando por VIP, FREE ou TODOS."""
@@ -1132,3 +1085,25 @@ async def obter_usuarios_broadcast(alvo="all"):
     except Exception as e:
         print(f"❌ Erro ao buscar usuários para broadcast: {e}")
         return []
+
+async def carregar_vips_no_boot():
+    """Roda UMA ÚNICA VEZ quando o bot liga. Puxa todos os VIPs ativos para a RAM."""
+    global VIP_CACHE
+    try:
+        agora_iso = datetime.utcnow().isoformat()
+        # Busca no Supabase quem é VIP e cuja data de vencimento é maior que agora
+        response = await asyncio.to_thread(
+            supabase.table('users').select('user_id, vip_until').eq('is_vip', True).gte('vip_until', agora_iso).execute
+        )
+        
+        VIP_CACHE.clear() # Limpa resquícios caso o bot esteja reconectando
+        
+        if response.data:
+            for row in response.data:
+                if row.get('vip_until'):
+                    dt_obj = datetime.fromisoformat(row['vip_until'].replace('Z', '+00:00')).replace(tzinfo=None)
+                    VIP_CACHE[row['user_id']] = dt_obj.timestamp()
+                    
+        print(f"🚀 [LATÊNCIA ZERO] Cache VIP Carregado: {len(VIP_CACHE)} usuários na memória RAM!")
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar cache de VIPs: {e}")

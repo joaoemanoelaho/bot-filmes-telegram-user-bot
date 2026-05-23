@@ -208,6 +208,7 @@ async def startup():
         application.add_handler(InlineQueryHandler(busca.inline_query_handler))
         application.add_error_handler(error_handler)
 
+        await db.carregar_vips_no_boot()
         await application.initialize()
         await application.start()
         
@@ -332,7 +333,6 @@ async def syncpay_webhook(request: Request) -> Response:
             # Chama a função que soma o tempo (30 dias * 24 horas = 720 horas)
             await adicionar_horas_vip(user_id, duration * 24)
             await db.clear_user_active_payment_id(user_id)
-            db._limpar_cache_usuario(user_id)
             print(f"✅ VIP ATIVADO/RENOVADO (SyncPay) para UserID: {user_id}")
 
             try:

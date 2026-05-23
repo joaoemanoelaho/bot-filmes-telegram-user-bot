@@ -43,6 +43,9 @@ async def adicionar_horas_vip(user_id: int, horas: int):
         }).eq('user_id', user_id).execute
     )
 
+    # ⚡ INJETA NA MEMÓRIA RAM INSTANTANEAMENTE
+    db.VIP_CACHE[user_id] = nova_data.timestamp()
+
 async def verificar_inscricao(bot, user_id):
     status_aceitos = ['member', 'administrator', 'creator']
     # O Bot checa usando IDs, não Links!
