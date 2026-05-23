@@ -1107,3 +1107,42 @@ async def carregar_vips_no_boot():
         print(f"🚀 [LATÊNCIA ZERO] Cache VIP Carregado: {len(VIP_CACHE)} usuários na memória RAM!")
     except Exception as e:
         print(f"⚠️ Erro ao carregar cache de VIPs: {e}")
+
+async def get_seasons_for_multiple_series(series_ids: list[int]) -> dict:
+    """Busca as temporadas de VÁRIAS séries em 1 única requisição."""
+    if not supabase or not series_ids: return {}
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('seasons')
+            .select('id, season_number, name, series_id')
+            .in_('series_id', series_ids)
+            .order('season_number', desc=False)
+            .execute
+        )
+        # O Python agrupa os resultados por série em nanossegundos
+        result = {}
+        for season in response.data:
+            sid = season['series_id']
+            if sid not in result: result[sid] = []
+            result[sid].append(season)
+        return result
+    except Exception as e:
+        print(f"Erro ao buscar seasons em lote: {e}")
+        return {}
+
+async def get_user_subscriptions_bulk(user_id: int, tmdb_ids: list[int]) -> set:
+    """Verifica inscrições de VÁRIAS séries em 1 única requisição."""
+    if not supabase or not tmdb_ids: return set()
+    try:
+        response = await asyncio.to_thread(
+            supabase.table('series_subscriptions')
+            .select('tmdb_id')
+            .eq('user_id', user_id)
+            .in_('tmdb_id', tmdb_ids)
+            .execute
+        )
+        # Retorna um "Set" mágico para busca O(1) na RAM
+        return {row['tmdb_id'] for row in response.data}
+    except Exception as e:
+        print(f"Erro ao buscar inscrições em lote: {e}")
+        return set()

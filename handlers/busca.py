@@ -265,6 +265,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 movies_from_db = await db.search_movies(query_text, limit=5)
                 series_from_db = await db.search_series_by_title(query_text, limit=5)
 
+                # ==============================
+                # LOOP DOS FILMES (Mantido igual)
+                # ==============================
                 for movie in movies_from_db:
                     poster = movie.get('poster_url')
                     if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
@@ -282,39 +285,52 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
 
-                for series in series_from_db:
-                    poster = series.get('poster_url')
-                    if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
-                    poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
-                    
-                    seasons = await db.get_seasons_for_series(series['series_id'])
-                    photo_caption = (f"📺 *{series['title']}*\n\n🗓️ *Ano:* {series['year']}\n🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n📝 *Sinopse:* {series.get('description', 'N/A')}\n\n---\nSelecione a temporada desejada abaixo:")
-                    
-                    # --- CÓDIGO NOVO DO SININHO AQUI ---
-                    tmdb_id_da_serie = series.get('tmdb_id')
+                # ==============================
+                # 🚀 LOOP DAS SÉRIES (OTIMIZADO - LOTE)
+                # ==============================
+                if series_from_db:
                     user_id = update.inline_query.from_user.id
                     
-                    # Verifica a inscrição do usuário logado
-                    inscrito = await db.is_subscribed(user_id, tmdb_id_da_serie)
-                    texto_sino = "🔔 Avisar Novos Eps (Ativado)" if inscrito else "🔕 Avisar Novos Eps"
-                    callback_sino = f"sub_toggle_{tmdb_id_da_serie}"
-                    # -----------------------------------
+                    # 1. Puxa todos os IDs das 5 séries de uma vez
+                    series_ids = [s['series_id'] for s in series_from_db]
+                    tmdb_ids = [s.get('tmdb_id') for s in series_from_db if s.get('tmdb_id')]
+                    
+                    # 2. Faz APENAS DUAS requisições para o banco e guarda na RAM
+                    all_seasons_dict = await db.get_seasons_for_multiple_series(series_ids)
+                    subscribed_tmdb_ids = await db.get_user_subscriptions_bulk(user_id, tmdb_ids)
 
-                    keyboard = []
-                    if seasons:
-                        for season in seasons:
-                            keyboard.append([InlineKeyboardButton(f"▶️ Temporada {season['season_number']}", switch_inline_query_current_chat=f"season:{season['id']}:0")])
-                    
-                    # Adiciona os botões finais na ordem certa
-                    keyboard.append([InlineKeyboardButton(texto_sino, callback_data=callback_sino)])
-                    keyboard.append([InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])])
-                    
-                    results.append(
-                        InlineQueryResultPhoto(
-                            id=f"series_{series['series_id']}", title=f"SÉRIE: {series['title']}", description=f"{series['year']} - {series.get('genre', 'Série')}",
-                            photo_url=poster, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+                    for series in series_from_db:
+                        poster = series.get('poster_url')
+                        if not poster: poster = 'https://via.placeholder.com/500x750.png?text=Sem+Pôster'
+                        poster_url_pequeno = poster.replace('/w500/', '/w92/') if '/w500/' in poster else poster
+                        
+                        # 👉 Lê da RAM instantaneamente em vez de travar o banco!
+                        seasons = all_seasons_dict.get(series['series_id'], [])
+                        
+                        photo_caption = (f"📺 *{series['title']}*\n\n🗓️ *Ano:* {series['year']}\n🎭 *Gênero:* {series.get('genre', 'N/A')}\n\n📝 *Sinopse:* {series.get('description', 'N/A')}\n\n---\nSelecione a temporada desejada abaixo:")
+                        
+                        tmdb_id_da_serie = series.get('tmdb_id')
+                        
+                        # 👉 Lê do 'Set' na RAM instantaneamente!
+                        inscrito = tmdb_id_da_serie in subscribed_tmdb_ids
+                        texto_sino = "🔔 Avisar Novos Eps (Ativado)" if inscrito else "🔕 Avisar Novos Eps"
+                        callback_sino = f"sub_toggle_{tmdb_id_da_serie}"
+
+                        keyboard = []
+                        if seasons:
+                            for season in seasons:
+                                keyboard.append([InlineKeyboardButton(f"▶️ Temporada {season['season_number']}", switch_inline_query_current_chat=f"season:{season['id']}:0")])
+                        
+                        keyboard.append([InlineKeyboardButton(texto_sino, callback_data=callback_sino)])
+                        keyboard.append([InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=series['title'])])
+                        
+                        results.append(
+                            InlineQueryResultPhoto(
+                                id=f"series_{series['series_id']}", title=f"SÉRIE: {series['title']}", description=f"{series['year']} - {series.get('genre', 'Série')}",
+                                photo_url=poster, thumbnail_url=poster_url_pequeno, caption=photo_caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+                            )
                         )
-                    )
+                
                 cache_time = 0
 
     except Exception as e:
