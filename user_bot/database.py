@@ -19,6 +19,7 @@ _bot_config_cache = None
 _config_cache_time = 0
 
 VIP_CACHE = {}
+USER_INFO_CACHE = {}
 CACHE_TTL = 300 
 
 # Tenta criar a conexão com o Supabase.
@@ -85,16 +86,20 @@ async def set_bot_config_value(key: str, value) -> bool:
 # e usam 'await asyncio.to_thread'
 async def get_or_create_user(user_id: int, first_name: str) -> tuple[dict, bool]:
     """
-    Verifica se um usuário existe no DB pelo seu ID.
-    Se não existir, cria um novo registro.
-    Se existir mas estiver inativo, REATIVA O USUÁRIO.
-    Retorna os dados do usuário.
+    Verifica se um usuário existe. Usa cache de RAM (5 min) para velocidade Extrema.
     """
     if not supabase:
         print("Conexão com Supabase não disponível.")
         return None, False
 
-    # Tenta buscar o usuário na tabela 'users'
+    # ⚡ 1. CHECAGEM NA MEMÓRIA RAM (Latência 0.00ms)
+    agora = time.time()
+    if user_id in USER_INFO_CACHE:
+        user_data, timestamp_salvo = USER_INFO_CACHE[user_id]
+        if agora - timestamp_salvo < 300:  # O cache dura 5 minutos (300 segundos)
+            return user_data, False # Retorna instantâneo da memória, sem ir ao banco!
+
+    # 🐌 2. SE NÃO ESTIVER NA RAM (ou expirou), VAI NO SUPABASE
     response = await asyncio.to_thread(
         supabase.table('users').select('*').eq('user_id', user_id).execute
     )
@@ -120,18 +125,19 @@ async def get_or_create_user(user_id: int, first_name: str) -> tuple[dict, bool]
             if insert_response.data:
                 # ⚡ Atualiza a Memória RAM IMEDIATAMENTE com o Trial
                 VIP_CACHE[user_id] = trial_end.timestamp()
+                
+                # 🧠 Salva o perfil do novato na RAM também!
+                USER_INFO_CACHE[user_id] = (insert_response.data[0], agora)
+                
                 return insert_response.data[0], True # True indica que é NOVO
         except Exception as e:
             print(f"Erro ao inserir novo usuário trial: {e}")
             return None, False
     
     # Se o usuário já existe, verifica se está ativo
-    print(f"Usuário {user_id} encontrado no banco de dados.")
     user_data = response.data[0]
     
     # --- LÓGICA DE REATIVAÇÃO ---
-    # Se ele estava inativo (False), reativa ele (True)
-    # Usamos .get('is_active', True) para ser seguro caso a coluna ainda não exista (ela vai defaultar para True)
     if not user_data.get('is_active', True):
         print(f"Usuário {user_id} estava inativo. Reativando...")
         try:
@@ -145,6 +151,9 @@ async def get_or_create_user(user_id: int, first_name: str) -> tuple[dict, bool]
         except Exception as e:
             print(f"Erro ao REATIVAR usuário {user_id}: {e}")
     # --- FIM DA LÓGICA ---
+    
+    # ⚡ 3. SALVA O RESULTADO NA MEMÓRIA RAM PARA OS PRÓXIMOS CLIQUES!
+    USER_INFO_CACHE[user_id] = (user_data, agora)
     
     return user_data, False
 
