@@ -131,23 +131,32 @@ async def process_tmdb_message(update: Update, context: ContextTypes.DEFAULT_TYP
             # Uma pequena pausa para o usuário ler a mensagem antes do bot processar as Etapas 4 e 5
             await asyncio.sleep(2.5)
 
-    # [4] VERIFICAÇÃO DE PEDIDOS PENDENTES (Mantém igual)
+    # [4] VERIFICAÇÃO DE PEDIDOS PENDENTES E EM PROCESSAMENTO 🛡️
     try:
-        pending_requests = await db.get_pending_requests()
-        if pending_requests:
+        # A MÁGICA AQUI: Puxa direto do banco pedidos 'pending' OU 'processing'
+        response = await asyncio.to_thread(
+            db.supabase.table("requests")
+            .select("requested_title")
+            .in_("status", ["pending", "processing"])
+            .execute
+        )
+        
+        pedidos_ativos = response.data if response.data else []
+        
+        if pedidos_ativos:
             id_tag = f"[ID: {tmdb_data['tmdb_id']}]"
-            for req in pending_requests:
+            for req in pedidos_ativos:
                 if id_tag in req['requested_title']:
                     await msg_wait.edit_text(
                         f"⚠️ <b>Pedido já realizado!</b>\n\n"
-                        f"O título <b>{tmdb_data['title']}</b> já foi solicitado e está na fila.\n"
+                        f"O título <b>{tmdb_data['title']}</b> já foi solicitado e está na fila trabalhando.\n"
                         "Não precisa pedir de novo, é só aguardar! 😉",
                         parse_mode="HTML"
                     )
                     if 'state' in context.user_data: del context.user_data['state']
                     return
     except Exception as e:
-        print(f"Erro ao verificar duplicidade pendente: {e}")
+        print(f"Erro ao verificar duplicidade na fila: {e}")
 
     # [5] Sucesso: Salva no Banco (Mantém igual)
     tipo_midia = "Filme" if tmdb_data['type'] == 'movie' else "Série"
