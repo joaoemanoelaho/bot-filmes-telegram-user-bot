@@ -364,7 +364,8 @@ async def broadcast_source_channel_handler(update: Update, context: ContextTypes
     context.bot_data["last_broadcast_source"] = {
         "from_chat_id": msg.chat_id,
         "message_id": msg.message_id,
-        "media_group_id": msg.media_group_id
+        "media_group_id": msg.media_group_id,
+        "reply_markup": msg.reply_markup
     }
 
     keyboard = [
@@ -391,7 +392,8 @@ async def broadcast_source_channel_handler(update: Update, context: ContextTypes
     await context.bot.copy_message(
         chat_id=admin_id,
         from_chat_id=msg.chat_id,
-        message_id=msg.message_id
+        message_id=msg.message_id,
+        reply_markup=msg.reply_markup
     )
 
 async def broadcast_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -428,7 +430,8 @@ async def broadcast_source_callback(update: Update, context: ContextTypes.DEFAUL
             context=context,
             message_id=source["message_id"],
             from_chat_id=source["from_chat_id"],
-            alvo=alvo
+            alvo=alvo,
+            botoes=source.get("reply_markup")
         )
     )
         
