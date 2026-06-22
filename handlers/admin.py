@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import Forbidden, RetryAfter
 import database as db
-from config import ADMIN_IDS
+from config import ADMIN_IDS, BROADCAST_SOURCE_CHAT_ID
 from handlers.common import DB_SEMAPHORE, safe_call
 import handlers.pedidos as pedidos
 
@@ -228,15 +228,29 @@ async def iniciar_broadcast_real(context: ContextTypes.DEFAULT_TYPE, message_id:
         f"🗑️ Usuários Removidos (Bloquearam o bot): {removidos}\n"
         f"❌ Falhas desconhecidas: {falha_outros}\n"
     )
-    await bot.send_message(chat_id=admin_id, text=relatorio)
+    await bot.send_message(
+        chat_id=admin_id,
+        text=relatorio,
+        parse_mode="Markdown"
+    )
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Captura qualquer tipo de mensagem para Broadcast e Pedidos."""
-    if update.message and update.message.chat.type != 'private':
+    """Captura mensagens privadas para Broadcast e Pedidos."""
+
+    msg = update.effective_message
+    user = update.effective_user
+
+    if not msg or not user:
         return
-    
+
+    if msg.chat.type != "private":
+        return
+
+    if context.user_data is None:
+        return
+
     async with DB_SEMAPHORE:
-        state = context.user_data.get('state')
+        state = context.user_data.get("state")
         
         # ROTA DE BROADCAST (ADMIN)
         if state == 'awaiting_broadcast_message':
@@ -252,7 +266,15 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("⚙️ Mensagem capturada! Preparando os motores...")
             
             # Passa o 'alvo' para a função saber para quem enviar
-            asyncio.create_task(iniciar_broadcast_real(context, message_id, from_chat_id, alvo))
+            context.application.create_task(
+                iniciar_broadcast_real(
+                    context=context,
+                    message_id=message_id,
+                    from_chat_id=from_chat_id,
+                    alvo=alvo,
+                    botoes=botoes
+                )
+            )
 
         # ROTA DE PEDIDOS TMDB
         elif state == 'awaiting_tmdb_id':
@@ -328,6 +350,87 @@ async def fake_pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao simular pagamento: {e}")
+
+async def broadcast_source_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Captura mensagens postadas no canal privado de transmissão."""
+    
+    msg = update.channel_post or update.message
+    if not msg:
+        return
+
+    if msg.chat_id != BROADCAST_SOURCE_CHAT_ID:
+        return
+
+    context.bot_data["last_broadcast_source"] = {
+        "from_chat_id": msg.chat_id,
+        "message_id": msg.message_id,
+        "media_group_id": msg.media_group_id
+    }
+
+    keyboard = [
+        [InlineKeyboardButton("🧪 Testar comigo", callback_data="bcsrc_test")],
+        [InlineKeyboardButton("📢 Enviar para Todos", callback_data="bcsrc_all")],
+        [InlineKeyboardButton("💎 Enviar para VIPs", callback_data="bcsrc_vip")],
+        [InlineKeyboardButton("🆓 Enviar para Gratuitos", callback_data="bcsrc_free")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="bcsrc_cancel")]
+    ]
+
+    admin_id = ADMIN_IDS[0]
+
+    await context.bot.send_message(
+        chat_id=admin_id,
+        text=(
+            "📥 **Mensagem capturada do canal de transmissão.**\n\n"
+            f"ID da mensagem: `{msg.message_id}`\n\n"
+            "Confira o preview abaixo antes de disparar."
+        ),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+    await context.bot.copy_message(
+        chat_id=admin_id,
+        from_chat_id=msg.chat_id,
+        message_id=msg.message_id
+    )
+
+async def broadcast_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    if user_id not in ADMIN_IDS:
+        return
+
+    if not query.data.startswith("bcsrc_"):
+        return
+
+    await query.answer()
+
+    alvo = query.data.replace("bcsrc_", "")
+
+    if alvo == "cancel":
+        await query.edit_message_text("❌ Transmissão cancelada.")
+        return
+
+    source = context.bot_data.get("last_broadcast_source")
+
+    if not source:
+        await query.edit_message_text("❌ Nenhuma mensagem capturada do canal ainda.")
+        return
+
+    await query.edit_message_text(
+        f"🚀 Disparo iniciado para: **{alvo.upper()}**",
+        parse_mode="Markdown"
+    )
+
+    context.application.create_task(
+        iniciar_broadcast_real(
+            context=context,
+            message_id=source["message_id"],
+            from_chat_id=source["from_chat_id"],
+            alvo=alvo
+        )
+    )
         
 async def set_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id

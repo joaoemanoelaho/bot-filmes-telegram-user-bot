@@ -196,8 +196,15 @@ async def startup():
         application.add_handler(CommandHandler("showconfig", admin.show_config_command))
         application.add_handler(CommandHandler("pedidos", admin.pedidos_command_handler))
         application.add_handler(CommandHandler("transmitir", admin.broadcast_command_handler))
+        application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, admin.broadcast_source_channel_handler))
+        application.add_handler(CallbackQueryHandler(admin.broadcast_source_callback, pattern=r"^bcsrc_"))
         application.add_handler(CallbackQueryHandler(admin.broadcast_callback, pattern="^bc_"))
-        application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, admin.text_message_handler))
+        application.add_handler(
+            MessageHandler(
+                filters.ChatType.PRIVATE & filters.ALL & ~filters.COMMAND,
+                admin.text_message_handler
+            )
+        )
         application.add_handler(CallbackQueryHandler(admin.admin_callback, pattern="^adm_"))
 
         # 6. PEDIDOS
