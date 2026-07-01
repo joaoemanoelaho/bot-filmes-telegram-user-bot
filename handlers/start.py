@@ -244,7 +244,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             f"S{season_number:02d}E{episode_data.get('episode_number', 0):02d}: <b>{episode_data.get('title', 'Episódio')}</b> {audio_text}\n\n"
                             f"---\n"
                             f"🍿 Assistido com @{bot_username}\n"
-                            f"⚠️ <b>Este vídeo será apagado em 4 horas.</b>"
                         )
 
                         # Lógica de navegação otimizada
@@ -305,15 +304,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 caption=video_caption,
                                 parse_mode="HTML",
                                 reply_markup=video_reply_markup,
-                                protect_content=True
-                            )
-                            # Agenda Deleção
-                            job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
-                            context.job_queue.run_once(
-                                delete_message_job, 
-                                when=14400, 
-                                data=job_data,
-                                name=f"del_{sent_message.chat_id}_{sent_message.message_id}"
+                                protect_content=False
                             )
                         except BadRequest as e:
                             # Plano B: Copiar (se falhar o file_id)
@@ -325,7 +316,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         chat_id=user.id,
                                         from_chat_id=STORAGE_CHANNEL_ID_SERIES,
                                         message_id=msg_id_to_copy,
-                                        protect_content=True
+                                        protect_content=False
                                     )
                                     await context.bot.edit_message_caption(
                                         chat_id=user.id,
@@ -333,13 +324,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         caption=video_caption,
                                         parse_mode="HTML",
                                         reply_markup=video_reply_markup
-                                    )
-                                    job_data = {'chat_id': user.id, 'message_id': copied_message.message_id}
-                                    context.job_queue.run_once(
-                                        delete_message_job, 
-                                        when=14400, 
-                                        data=job_data,
-                                        name=f"del_{user.id}_{copied_message.message_id}"
                                     )
                                 except Exception:
                                     await status_msg.edit_text("😔 Erro ao recuperar vídeo.")

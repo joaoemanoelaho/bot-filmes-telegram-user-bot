@@ -240,16 +240,14 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except: pass
 
         video_markup = await get_fav_keyboard_markup(user_id, unique_code, base_keyboard)
-        caption_text = f"🍿 **{fav_item['title']}**\n\n🔖 Recuperado da Minha Lista.\n⚠️ *Apaga em 4 horas.*"
+        caption_text = f"🍿 **{fav_item['title']}**\n\n🔖 Recuperado da Minha Lista."
 
         try:
             # PLANO A: Usando o File ID blindado
             sent_message = await context.bot.send_video(
                 chat_id=user_id, video=final_file_id, caption=caption_text,
-                parse_mode="Markdown", reply_markup=video_markup, protect_content=True
+                parse_mode="Markdown", reply_markup=video_markup, protect_content=False
             )
-            job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
-            context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{sent_message.message_id}")
             
         except BadRequest as e:
             error_text = str(e).lower()
@@ -257,13 +255,11 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 try:
                     # PLANO B: Cópia
                     copied_message = await context.bot.copy_message(
-                        chat_id=user_id, from_chat_id=fav_item['channel_id'], message_id=fav_item['message_id'], protect_content=True
+                        chat_id=user_id, from_chat_id=fav_item['channel_id'], message_id=fav_item['message_id'], protect_content=False
                     )
                     await context.bot.edit_message_caption(
                         chat_id=user_id, message_id=copied_message.message_id, caption=caption_text, parse_mode="Markdown", reply_markup=video_markup
                     )
-                    job_data = {'chat_id': user_id, 'message_id': copied_message.message_id}
-                    context.job_queue.run_once(delete_message_job, when=14400, data=job_data, name=f"del_{user_id}_{copied_message.message_id}")
                 except Exception:
                     await status_msg.edit_text("❌ Erro fatal: O arquivo original foi apagado e não foi substituído no Acervo. Remova dos favoritos!")
                     return

@@ -167,7 +167,6 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🎭 <b>Gênero:</b> {movie['genre']}\n\n"
                     f"---\n"
                     f"🍿 Assistido com @{bot_username}\n"
-                    f"⚠️ <b>Este vídeo será apagado em 4 horas.</b>"
                 )
 
                 fav_unique_code = f"mov_{movie_id}_{audio_choice}"
@@ -189,10 +188,8 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=video_caption,
                         parse_mode="HTML",
                         reply_markup=video_reply_markup,
-                        protect_content=True
+                        protect_content=False
                     )
-                    job_data = {'chat_id': sent_message.chat_id, 'message_id': sent_message.message_id}
-                    context.job_queue.run_once(delete_message_job, 14400, data=job_data, name=f"del_{sent_message.chat_id}_{sent_message.message_id}")
                 except BadRequest as e:
                     # Plano B
                     if ("wrong file id" in str(e).lower()) and msg_id_to_copy and STORAGE_CHANNEL_ID:
@@ -201,7 +198,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 chat_id=query.message.chat.id,
                                 from_chat_id=STORAGE_CHANNEL_ID,
                                 message_id=msg_id_to_copy,
-                                protect_content=True
+                                protect_content=False
                             )
                             await context.bot.edit_message_caption(
                                 chat_id=query.message.chat.id,
@@ -210,8 +207,6 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 parse_mode="HTML",
                                 reply_markup=video_reply_markup
                             )
-                            job_data = {'chat_id': query.message.chat.id, 'message_id': copied_message.message_id}
-                            context.job_queue.run_once(delete_message_job, 14400, data=job_data, name=f"del_{query.message.chat.id}_{copied_message.message_id}")
                         except Exception:
                             await context.bot.send_message(chat_id=query.message.chat.id, text="😔 Erro ao recuperar arquivo.")
                     else:
