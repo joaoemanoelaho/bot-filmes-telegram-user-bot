@@ -52,6 +52,7 @@ DEFAULT_PAYER = {
     "phone": os.getenv("PAYER_PHONE")
 }
 
+
 FSUB_GROUP_ID = int(os.getenv("FSUB_GROUP_ID"))
 FSUB_CHANNEL_ID = os.getenv("FSUB_CHANNEL_ID")
 
