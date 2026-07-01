@@ -1,193 +1,123 @@
 import aiohttp
-import asyncio
 import logging
-import qrcode
-import io
-import base64
-from datetime import datetime, timedelta
 
 # Importando do seu config.py
+# ⚠️ ATENÇÃO: Você precisará adicionar EVOPAY_TOKEN no seu config.py e .env
 from config import (
-    SYNCPAY_CLIENT_ID, 
-    SYNCPAY_CLIENT_SECRET,
-    SYNCPAY_BASE_URL,
+    EVOPAY_TOKEN,
     WEBHOOK_DOMAIN,
     WEBHOOK_SECRET
 )
 
 logger = logging.getLogger(__name__)
 
-class SyncPayAPI:
+class EvoPayAPI:
     def __init__(self):
-        self.access_token = None
-        self.token_expires_at = datetime.now()
-
-    async def _get_auth_token(self):
-        """
-        Realiza o login na Syncpay e gerencia a renovação do Token (validade de 1h).
-        """
-        # Se o token existe e ainda não venceu (com margem de 5 min)
-        if self.access_token and datetime.now() < (self.token_expires_at - timedelta(minutes=5)):
-            return self.access_token
-
-        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/auth-token"
-        
-        payload = {
-            "client_id": SYNCPAY_CLIENT_ID,
-            "client_secret": SYNCPAY_CLIENT_SECRET
-        }
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(url, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        self.access_token = data.get("access_token")
-                        # Define validade (padrão 1h)
-                        expires_in = data.get("expires_in", 3600)
-                        self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-                        return self.access_token
-                    else:
-                        logger.error(f"❌ Erro Login Syncpay: {await response.text()}")
-                        return None
-            except Exception as e:
-                logger.error(f"❌ Erro Conexão Auth: {e}")
-                return None
-
-    def _generate_qr_base64(self, text):
-        """
-        Gera a imagem do QR Code localmente (Syncpay só manda o texto).
-        """
-        if not text: return None
-        try:
-            qr = qrcode.QRCode(version=1, box_size=10, border=4)
-            qr.add_data(text)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            
-            buffered = io.BytesIO()
-            img.save(buffered, format="PNG")
-            return base64.b64encode(buffered.getvalue()).decode("utf-8")
-        except Exception as e:
-            logger.error(f"Erro ao gerar imagem QR: {e}")
-            return None
-
-    async def create_pix_payment(self, user_id, amount):
-        """
-        Cria cobrança PIX na Syncpay usando o 'Cliente Padrão' para não pedir dados no chat.
-        """
-        token = await self._get_auth_token()
-        if not token: return None
-
-        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/cash-in"
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
+        self.base_url = "https://pix.evopay.cash/v1"
+        self.headers = {
+            "API-Key": EVOPAY_TOKEN,
             "Content-Type": "application/json"
         }
 
+    def _traduzir_status(self, status_raw):
+        """Traduz o status da EvoPay para o padrão interno do bot (SyncPay legado)"""
+        if not status_raw:
+            return None
+        
+        status_upper = status_raw.upper()
+        if status_upper == "COMPLETED":
+            return "paid"
+        elif status_upper == "PENDING":
+            return "created"
+        elif status_upper in ["EXPIRED", "CANCELED"]:
+            return "expired"
+        
+        return status_upper.lower()
+
+    async def create_pix_payment(self, user_id, amount):
+        """
+        Cria cobrança PIX na EvoPay.
+        """
+        if not EVOPAY_TOKEN:
+            logger.error("❌ EVOPAY_TOKEN não configurado!")
+            return None
+
+        url = f"{self.base_url}/pix"
+        
         # URL Dinâmica para identificar o usuário no Webhook
-        user_webhook_url = f"{WEBHOOK_DOMAIN}/webhook/syncpay/{user_id}?secret={WEBHOOK_SECRET}"
+        user_webhook_url = f"{WEBHOOK_DOMAIN}/webhook/evopay/{user_id}?secret={WEBHOOK_SECRET}"
 
         payload = {
             "amount": float(amount),
-            "description": f"VIP-{user_id}",
-            "webhook_url": user_webhook_url, # Syncpay avisará aqui
+            "callbackUrl": user_webhook_url
         }
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.post(url, json=payload, headers=headers) as response:
+                async with session.post(url, json=payload, headers=self.headers) as response:
                     resp_json = await response.json()
                     
                     if response.status == 200:
-                        pix_code = resp_json.get("pix_code")
-                        payment_id = resp_json.get("identifier")
-
-                        # Gera a imagem Base64 aqui mesmo
-                        qr_base64 = self._generate_qr_base64(pix_code)
-
+                        # A EvoPay já entrega o Base64 pronto, não precisamos gerar localmente!
                         return {
-                            "payment_id": payment_id,
-                            "qr_code_text": pix_code,
-                            "qr_code_base64": qr_base64
+                            "payment_id": resp_json.get("id"),
+                            "qr_code_text": resp_json.get("qrCodeText"),
+                            "qr_code_base64": resp_json.get("qrCodeBase64")
                         }
                     else:
-                        logger.error(f"❌ Erro Cash-in Syncpay: {resp_json}")
+                        logger.error(f"❌ Erro Criação PIX EvoPay: {resp_json}")
                         return None
             except Exception as e:
-                logger.error(f"❌ Erro Conexão Cash-in: {e}")
+                logger.error(f"❌ Erro Conexão EvoPay: {e}")
                 return None
 
     async def check_payment_status(self, payment_id):
         """
         Verifica status manualmente (Backup do Webhook).
         """
-        token = await self._get_auth_token()
-        if not token: return None
-
-        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/transaction/{payment_id}"
-        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/pix?id={payment_id}"
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url, headers=headers) as response:
+                async with session.get(url, headers=self.headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        # A Syncpay retorna dentro de data -> status
-                        # Status possíveis: pending, completed, failed, refunded
-                        status_raw = data.get("data", {}).get("status")
-                        
-                        # Tradução para o padrão do seu bot antigo
-                        if status_raw == "completed": return "paid"
-                        if status_raw == "pending": return "created" # ou waiting
-                        if status_raw == "failed": return "expired"
-                        return status_raw
+                        status_raw = data.get("status")
+                        return self._traduzir_status(status_raw)
                     elif response.status == 404:
                         return "not_found"
                     return None
-            except Exception:
+            except Exception as e:
+                logger.error(f"❌ Erro Check Status EvoPay: {e}")
                 return None
             
     async def get_pix_details(self, payment_id):
         """
-        NOVO: Recupera todos os dados do PIX (inclusive o Copia e Cola) se ele estiver pendente.
+        Recupera todos os dados do PIX (inclusive o Copia e Cola) se ele estiver pendente.
         """
-        token = await self._get_auth_token()
-        if not token: return None
-
-        url = f"{SYNCPAY_BASE_URL}/api/partner/v1/transaction/{payment_id}"
-        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/pix?id={payment_id}"
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url, headers=headers) as response:
+                async with session.get(url, headers=self.headers) as response:
                     if response.status == 200:
-                        resp_json = await response.json()
-                        data = resp_json.get("data", {})
+                        data = await response.json()
                         
                         status_raw = data.get("status")
-                        status = status_raw
-                        if status_raw == "completed": status = "paid"
-                        elif status_raw == "pending": status = "created"
-                        elif status_raw == "failed": status = "expired"
-
-                        pix_code = data.get("pix_code")
-                        qr_base64 = self._generate_qr_base64(pix_code) if pix_code else None
-
+                        
                         return {
-                            "status": status,
-                            "qr_code_text": pix_code,
-                            "qr_code_base64": qr_base64
+                            "status": self._traduzir_status(status_raw),
+                            "qr_code_text": data.get("qrCodeText"),
+                            "qr_code_base64": data.get("qrCodeBase64")
                         }
                     return None
-            except Exception:
+            except Exception as e:
+                logger.error(f"❌ Erro Pix Details EvoPay: {e}")
                 return None
 
 # --- INSTÂNCIA E WRAPPERS ---
 # Isso garante que as funções chamadas no vip.py continuem funcionando igual
-api = SyncPayAPI()
+api = EvoPayAPI()
 
 async def create_pix_payment(user_id: int, amount: float) -> dict | None:
     return await api.create_pix_payment(user_id, amount)
