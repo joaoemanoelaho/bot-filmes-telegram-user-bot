@@ -6,6 +6,7 @@ import database as db
 from config import ADMIN_IDS, BROADCAST_SOURCE_CHAT_ID
 from handlers.common import DB_SEMAPHORE, safe_call
 import handlers.pedidos as pedidos
+from datetime import datetime
 
 # =================================================================
 # === COMANDOS DE CONFIGURAÇÃO ===
@@ -279,6 +280,39 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # ROTA DE PEDIDOS TMDB
         elif state == 'awaiting_tmdb_id':
             await pedidos.process_tmdb_message(update, context)
+        
+        # ROTA DE GERENCIAR VIP (ADMIN)
+        elif state == 'awaiting_admin_vip_manage':
+            if update.effective_user.id not in ADMIN_IDS: return
+            
+            try:
+                partes = update.message.text.strip().split()
+                alvo_id = int(partes[0])
+                dias = int(partes[1])
+                
+                if dias > 0:
+                    # DAR VIP
+                    await db.set_user_as_vip(alvo_id, duration_days=dias)
+                    db.VIP_CACHE.pop(alvo_id, None)  # A MÁGICA: DELETA O CACHE VELHO
+                    
+                    await update.message.reply_text(f"✅ Sucesso! O usuário `{alvo_id}` ganhou {dias} dias de VIP. O cache foi resetado.", parse_mode="Markdown")
+                    try:
+                        await context.bot.send_message(chat_id=alvo_id, text=f"🎉 **PRESENTE DO ADMIN!**\nSua conta acaba de receber +{dias} dias de acesso VIP Premium! 🍿", parse_mode="Markdown")
+                    except: pass
+                else:
+                    # TIRAR VIP
+                    from datetime import datetime
+                    agora_iso = datetime.now().isoformat()
+                    # Salva no banco o vencimento para a hora atual (mata o VIP) e tira o status
+                    await asyncio.to_thread(db.supabase.table('users').update({'is_vip': False, 'vip_until': agora_iso}).eq('user_id', alvo_id).execute())
+                    
+                    db.VIP_CACHE.pop(alvo_id, None)  # A MÁGICA: LIMPA O VIP DA MEMÓRIA RAM
+                    await update.message.reply_text(f"❌ Sucesso! O VIP do usuário `{alvo_id}` foi cancelado e o cache resetado.", parse_mode="Markdown")
+                    
+            except Exception as e:
+                await update.message.reply_text("⚠️ Formato inválido! Envie: `ID DIAS` (Ex: `123456789 30` ou `123456789 0`)", parse_mode="Markdown")
+            
+            del context.user_data['state']
 
 async def fake_pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando secreto para simular um pagamento e testar os pontos."""
@@ -452,3 +486,121 @@ async def set_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     except IndexError:
         await update.message.reply_text("❌ Erro: Envie o texto logo após o comando.\n\nExemplo:\n`/setmenu Olá {USER_NAME}! Você tem {POINTS} pontos.`", parse_mode="Markdown")
+
+# =================================================================
+# === PAINEL CENTRAL DO ADMIN ===
+# =================================================================
+
+async def painel_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS: return
+
+    msg = await update.message.reply_text("⏳ Puxando os relatórios do banco de dados...")
+    await _renderizar_painel(user_id, msg)
+
+async def _renderizar_painel(user_id, msg_to_edit):
+    """Lê as métricas em tempo real e desenha o painel (Usado no comando e no botão voltar)"""
+    async with DB_SEMAPHORE:
+        # 1. Total de Usuários (Leads)
+        try:
+            res_users = await asyncio.to_thread(db.supabase.table('users').select('user_id', count='exact').execute())
+            total_users = res_users.count if res_users else 0
+        except: total_users = 0
+
+        # 2. VIPs Ativos Hoje
+        try:
+            agora_iso = datetime.now().isoformat()
+            res_vips = await asyncio.to_thread(db.supabase.table('users').select('user_id', count='exact').eq('is_vip', True).gte('vip_until', agora_iso).execute())
+            total_vips = res_vips.count if res_vips else 0
+        except: total_vips = 0
+
+        # 3. Pedidos Pendentes
+        try:
+            pending = await db.get_pending_requests()
+            total_pendentes = len(pending) if pending else 0
+        except: total_pendentes = 0
+
+        # Calcula a taxa de conversão
+        conversao = (total_vips / total_users * 100) if total_users > 0 else 0.0
+
+    texto_painel = (
+        "🎛️ **PAINEL DE COMANDO - CINE PIPOCA** 🎛️\n\n"
+        f"👥 **Total de Leads:** `{total_users}` usuários\n"
+        f"💎 **VIPs Ativos:** `{total_vips}` assinantes\n"
+        f"📈 **Conversão VIP:** `{conversao:.1f}%`\n"
+        f"⏳ **Pedidos na Fila:** `{total_pendentes}` pendentes\n\n"
+        "O que você deseja fazer agora?"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("📢 Fazer Broadcast", callback_data="painel_broadcast")],
+        [InlineKeyboardButton("📋 Fila de Pedidos", callback_data="painel_pedidos")],
+        [InlineKeyboardButton("💎 Dar/Tirar VIP Manual", callback_data="painel_vip")],
+        [InlineKeyboardButton("❌ Fechar Painel", callback_data="painel_fechar")]
+    ]
+
+    await safe_call(msg_to_edit, "edit_text", text=texto_painel, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def painel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processa todos os cliques dentro do painel."""
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if user_id not in ADMIN_IDS: return
+    if not query.data.startswith("painel_"): return
+
+    await safe_call(query, "answer")
+    acao = query.data.replace("painel_", "")
+
+    if acao == "fechar":
+        await safe_call(query, "delete_message")
+        
+    elif acao == "voltar":
+        await safe_call(query, "edit_message_text", text="⏳ Atualizando métricas...")
+        await _renderizar_painel(user_id, query.message)
+
+    elif acao == "broadcast":
+        # Reaproveita a mesma interface que você já tinha no broadcast
+        keyboard = [
+            [InlineKeyboardButton("📢 Todos os Usuários", callback_data="bc_all")],
+            [InlineKeyboardButton("💎 Apenas VIPs", callback_data="bc_vip")],
+            [InlineKeyboardButton("🆓 Apenas Gratuitos (Leads)", callback_data="bc_free")],
+            [InlineKeyboardButton("🧪 Testar (Apenas para Mim)", callback_data="bc_test")],
+            [InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data="painel_voltar")]
+        ]
+        await safe_call(query, "edit_message_text", text="🎯 **Painel de Transmissão Inteligente**\n\nEscolha qual público deve receber a sua mensagem:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif acao == "pedidos":
+        # Exclui o menu e envia a fila de pedidos diretamente
+        await safe_call(query, "delete_message")
+        async with DB_SEMAPHORE:
+            pending = await db.get_pending_requests()
+            if not pending:
+                await context.bot.send_message(chat_id=user_id, text="✅ Zero Pendências! O catálogo está em dia.")
+                return
+
+            await context.bot.send_message(chat_id=user_id, text=f"📋 **{len(pending)} Pedidos Pendentes:**", parse_mode="Markdown")
+            for req in pending:
+                kb = [[
+                    InlineKeyboardButton("✅ Aprovar", callback_data=f"adm_approve_{req['request_id']}"),
+                    InlineKeyboardButton("❌ Negar", callback_data=f"adm_deny_{req['request_id']}")
+                ]]
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🆔 `{req['request_id']}` | 👤 `{req['user_id']}`\n🎬 `{req['requested_title']}`",
+                    reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+                )
+
+    elif acao == "vip":
+        context.user_data['state'] = 'awaiting_admin_vip_manage'
+        texto = (
+            "💎 **GERENCIADOR DE VIP MANUAL** 💎\n\n"
+            "Para **DAR** VIP, digite o ID e os dias.\n"
+            "👉 `123456789 30` (Dá 30 dias)\n\n"
+            "Para **TIRAR** VIP, digite o ID e o número 0.\n"
+            "👉 `123456789 0` (Remove o VIP e limpa o cache)\n\n"
+            "Envie a mensagem agora ou clique em voltar."
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data="painel_voltar")]]
+        await safe_call(query, "edit_message_text", text=texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))

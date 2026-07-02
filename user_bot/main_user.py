@@ -196,6 +196,8 @@ async def startup():
         application.add_handler(CommandHandler("showconfig", admin.show_config_command))
         application.add_handler(CommandHandler("pedidos", admin.pedidos_command_handler))
         application.add_handler(CommandHandler("transmitir", admin.broadcast_command_handler))
+        application.add_handler(CommandHandler("painel", admin.painel_command_handler))
+        application.add_handler(CallbackQueryHandler(admin.painel_callback, pattern="^painel_"))
         application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, admin.broadcast_source_channel_handler))
         application.add_handler(CallbackQueryHandler(admin.broadcast_source_callback, pattern=r"^bcsrc_"))
         application.add_handler(CallbackQueryHandler(admin.broadcast_callback, pattern="^bc_"))
