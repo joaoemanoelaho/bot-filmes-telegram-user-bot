@@ -282,9 +282,9 @@ async def telegram_webhook(request: Request) -> Response:
     return Response("ok", status_code=200)
 
 # ==========================================================
-# 💸 WEBHOOK SYNCPAY (NOVO)
+# 💸 WEBHOOK EVOPAY (NOVO)
 # ==========================================================
-async def syncpay_webhook(request: Request) -> Response:
+async def evopay_webhook(request: Request) -> Response:
     await APP_INITIALIZED.wait()
 
     # === 🔒 BLINDAGEM DE SEGURANÇA ===
@@ -302,28 +302,28 @@ async def syncpay_webhook(request: Request) -> Response:
     try:
         user_id = int(str(raw_user_id).strip())
     except (ValueError, TypeError):
-        print(f"[Webhook SyncPay] ❌ ID inválido recebido: '{raw_user_id}'")
+        print(f"[Webhook EvoPay] ❌ ID inválido recebido: '{raw_user_id}'")
         return JSONResponse({"status": "error", "message": "Invalid user_id"}, status_code=400)
 
-    # 2. Leitura do JSON
+    # 2. Leitura do JSON (A EvoPay manda direto, sem estar dentro de 'data')
     try:
-        payload = await request.json()
-        # A SyncPay manda tudo dentro de um objeto 'data'
-        data = payload.get('data', {}) 
+        data = await request.json()
     except Exception as e:
-        print(f"[Webhook SyncPay] ❌ Erro ao ler JSON: {e}")
+        print(f"[Webhook EvoPay] ❌ Erro ao ler JSON: {e}")
         return JSONResponse({"status": "error"}, status_code=400)
 
     if not data:
-         print(f"[Webhook SyncPay] ❌ Payload vazio ou sem 'data'.")
+         print(f"[Webhook EvoPay] ❌ Payload vazio.")
          return JSONResponse({"status": "ignored"})
 
     # 3. Processamento do status
-    # Status possíveis: 'completed', 'pending', 'failed'
     payment_status = data.get("status")
-    print(f"[Webhook SyncPay] 🔔 UserID: {user_id} | Status: {payment_status}")
+    payment_type = data.get("type")
     
-    if payment_status in ["completed", "PAID_OUT", "APPROVED", "paid", "SETTLED"]:
+    print(f"[Webhook EvoPay] 🔔 UserID: {user_id} | Status: {payment_status} | Tipo: {payment_type}")
+    
+    # Verifica se o PIX foi pago e se é realmente um depósito
+    if payment_status == "COMPLETED" and payment_type == "DEPOSIT":
         try:
             # Apaga a mensagem do QR Code antigo se existir
             try:
@@ -342,7 +342,7 @@ async def syncpay_webhook(request: Request) -> Response:
             # Chama a função que soma o tempo (30 dias * 24 horas = 720 horas)
             await adicionar_horas_vip(user_id, duration * 24)
             await db.clear_user_active_payment_id(user_id)
-            print(f"✅ VIP ATIVADO/RENOVADO (SyncPay) para UserID: {user_id}")
+            print(f"✅ VIP ATIVADO/RENOVADO (EvoPay) para UserID: {user_id}")
 
             try:
                 user_info = await db.get_user_details(user_id)
@@ -389,7 +389,7 @@ async def syncpay_webhook(request: Request) -> Response:
             except Exception: pass
             
         except Exception as e_db:
-            print(f"❌ ERRO AO SALVAR VIP (SyncPay): {e_db}")
+            print(f"❌ ERRO AO SALVAR VIP (EvoPay): {e_db}")
             return JSONResponse({"status": "error"}, status_code=500)
 
     return JSONResponse({"status": "received"})
@@ -431,8 +431,8 @@ async def health_check(request: Request) -> Response:
 # ==========================================================
 routes = [
     Route(TELEGRAM_WEBHOOK_PATH, endpoint=telegram_webhook, methods=["POST"]),
-    # ROTA NOVA SYNCPAY
-    Route("/webhook/syncpay/{user_id}", endpoint=syncpay_webhook, methods=["POST"]),
+    # 🚀 ROTA ATUALIZADA EVOPAY
+    Route("/webhook/evopay/{user_id}", endpoint=evopay_webhook, methods=["POST"]),
     Route("/webhook/supabase", endpoint=supabase_webhook, methods=["POST"]),
     Route("/health", endpoint=health_check, methods=["GET"]),
 ]
