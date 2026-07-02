@@ -290,27 +290,39 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 alvo_id = int(partes[0])
                 dias = int(partes[1])
                 
+                # 🚀 A MÁGICA: Importamos a sua função perfeita que já atualiza o Banco e o Cache!
+                from handlers.start import adicionar_horas_vip
+                
                 if dias > 0:
-                    # DAR VIP
-                    await db.set_user_as_vip(alvo_id, duration_days=dias)
-                    db.VIP_CACHE.pop(alvo_id, None)  # A MÁGICA: DELETA O CACHE VELHO
+                    # DAR VIP: Convertendo dias para horas e usando a sua estrutura oficial
+                    await adicionar_horas_vip(alvo_id, dias * 24)
                     
-                    await update.message.reply_text(f"✅ Sucesso! O usuário `{alvo_id}` ganhou {dias} dias de VIP. O cache foi resetado.", parse_mode="Markdown")
+                    await update.message.reply_text(f"✅ Sucesso Absoluto! O usuário `{alvo_id}` ganhou {dias} dias de VIP. Cache 100% sincronizado.", parse_mode="Markdown")
                     try:
                         await context.bot.send_message(chat_id=alvo_id, text=f"🎉 **PRESENTE DO ADMIN!**\nSua conta acaba de receber +{dias} dias de acesso VIP Premium! 🍿", parse_mode="Markdown")
                     except: pass
-                else:
-                    # TIRAR VIP
-                    from datetime import datetime
-                    agora_iso = datetime.now().isoformat()
-                    # Salva no banco o vencimento para a hora atual (mata o VIP) e tira o status
-                    await asyncio.to_thread(db.supabase.table('users').update({'is_vip': False, 'vip_until': agora_iso}).eq('user_id', alvo_id).execute())
                     
-                    db.VIP_CACHE.pop(alvo_id, None)  # A MÁGICA: LIMPA O VIP DA MEMÓRIA RAM
-                    await update.message.reply_text(f"❌ Sucesso! O VIP do usuário `{alvo_id}` foi cancelado e o cache resetado.", parse_mode="Markdown")
+                else:
+                    # ❌ TIRAR VIP (Única parte manual, pois sua função só adiciona)
+                    from datetime import datetime
+                    agora_iso = datetime.utcnow().isoformat()
+                    
+                    # Salva no banco o vencimento para a hora atual (mata o VIP)
+                    await asyncio.to_thread(
+                        db.supabase.table('users').update({
+                            'is_vip': False, 
+                            'vip_until': agora_iso
+                        }).eq('user_id', alvo_id).execute
+                    )
+                    
+                    # Arranca da memória RAM na força
+                    db.VIP_CACHE.pop(alvo_id, None)  
+                    
+                    await update.message.reply_text(f"❌ Sucesso! O VIP do usuário `{alvo_id}` foi cancelado e o cache foi detonado.", parse_mode="Markdown")
                     
             except Exception as e:
-                await update.message.reply_text("⚠️ Formato inválido! Envie: `ID DIAS` (Ex: `123456789 30` ou `123456789 0`)", parse_mode="Markdown")
+                print(f"Erro no painel VIP: {e}")
+                await update.message.reply_text("⚠️ Formato inválido ou erro no banco! Envie: `ID DIAS` (Ex: `123456789 30`)", parse_mode="Markdown")
             
             del context.user_data['state']
 
