@@ -511,28 +511,40 @@ async def painel_command_handler(update: Update, context: ContextTypes.DEFAULT_T
     await _renderizar_painel(user_id, msg)
 
 async def _renderizar_painel(user_id, msg_to_edit):
-    """Lê as métricas em tempo real e desenha o painel (Usado no comando e no botão voltar)"""
+    """Lê as métricas em tempo real e desenha o painel"""
     async with DB_SEMAPHORE:
         # 1. Total de Usuários (Leads)
         try:
-            res_users = await asyncio.to_thread(db.supabase.table('users').select('user_id', count='exact').execute())
+            # 🚀 CORREÇÃO 1: .execute sem os parênteses no final!
+            res_users = await asyncio.to_thread(
+                db.supabase.table('users').select('user_id', count='exact').execute
+            )
             total_users = res_users.count if res_users else 0
-        except: total_users = 0
+        except Exception as e: 
+            print(f"Erro painel (users): {e}")
+            total_users = 0
 
         # 2. VIPs Ativos Hoje
         try:
-            agora_iso = datetime.now().isoformat()
-            res_vips = await asyncio.to_thread(db.supabase.table('users').select('user_id', count='exact').eq('is_vip', True).gte('vip_until', agora_iso).execute())
+            from datetime import datetime
+            # 🚀 CORREÇÃO 2: utcnow() para bater com o fuso horário do banco!
+            agora_iso = datetime.utcnow().isoformat() 
+            res_vips = await asyncio.to_thread(
+                db.supabase.table('users').select('user_id', count='exact').eq('is_vip', True).gte('vip_until', agora_iso).execute
+            )
             total_vips = res_vips.count if res_vips else 0
-        except: total_vips = 0
+        except Exception as e: 
+            print(f"Erro painel (vips): {e}")
+            total_vips = 0
 
         # 3. Pedidos Pendentes
         try:
             pending = await db.get_pending_requests()
             total_pendentes = len(pending) if pending else 0
-        except: total_pendentes = 0
+        except: 
+            total_pendentes = 0
 
-        # Calcula a taxa de conversão
+        # Calcula a taxa de conversão (evitando divisão por zero)
         conversao = (total_vips / total_users * 100) if total_users > 0 else 0.0
 
     texto_painel = (
