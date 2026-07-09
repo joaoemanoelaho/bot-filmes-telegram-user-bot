@@ -246,7 +246,7 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # PLANO A: Usando o File ID blindado
             sent_message = await context.bot.send_video(
                 chat_id=user_id, video=final_file_id, caption=caption_text,
-                parse_mode="Markdown", reply_markup=video_markup, protect_content=False
+                parse_mode="Markdown", reply_markup=video_markup, protect_content=True
             )
             
         except BadRequest as e:
@@ -255,7 +255,7 @@ async def fav_watch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 try:
                     # PLANO B: Cópia
                     copied_message = await context.bot.copy_message(
-                        chat_id=user_id, from_chat_id=fav_item['channel_id'], message_id=fav_item['message_id'], protect_content=False
+                        chat_id=user_id, from_chat_id=fav_item['channel_id'], message_id=fav_item['message_id'], protect_content=True
                     )
                     await context.bot.edit_message_caption(
                         chat_id=user_id, message_id=copied_message.message_id, caption=caption_text, parse_mode="Markdown", reply_markup=video_markup

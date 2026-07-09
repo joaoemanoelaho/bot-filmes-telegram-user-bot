@@ -188,7 +188,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=video_caption,
                         parse_mode="HTML",
                         reply_markup=video_reply_markup,
-                        protect_content=False
+                        protect_content=True
                     )
                 except BadRequest as e:
                     # Plano B
@@ -198,7 +198,7 @@ async def player_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 chat_id=query.message.chat.id,
                                 from_chat_id=STORAGE_CHANNEL_ID,
                                 message_id=msg_id_to_copy,
-                                protect_content=False
+                                protect_content=True
                             )
                             await context.bot.edit_message_caption(
                                 chat_id=query.message.chat.id,

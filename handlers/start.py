@@ -304,7 +304,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 caption=video_caption,
                                 parse_mode="HTML",
                                 reply_markup=video_reply_markup,
-                                protect_content=False
+                                protect_content=True
                             )
                         except BadRequest as e:
                             # Plano B: Copiar (se falhar o file_id)
@@ -316,7 +316,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                         chat_id=user.id,
                                         from_chat_id=STORAGE_CHANNEL_ID_SERIES,
                                         message_id=msg_id_to_copy,
-                                        protect_content=False
+                                        protect_content=True
                                     )
                                     await context.bot.edit_message_caption(
                                         chat_id=user.id,
